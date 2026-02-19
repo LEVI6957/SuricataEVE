@@ -133,7 +133,8 @@ if [[ -d "$INSTALL_DIR" ]]; then
     read -rp "$(echo -e "${BOLD}Update dari git? [Y/n]: ${NC}")" DO_PULL
     if [[ "${DO_PULL,,}" != "n" ]]; then
         cd "$INSTALL_DIR"
-        git pull
+        git fetch origin
+        git reset --hard origin/main
         success "Repository diupdate"
     fi
 else
@@ -150,10 +151,14 @@ fi
 
 cd "$INSTALL_DIR"
 
-# Buat folder logs jika belum ada
+# Buat folder logs dan file-file yang dibutuhkan oleh volume mount
 mkdir -p logs
-touch auto_block/blocked_ips.log
-touch dashboard/settings.json
+touch logs/eve.json                   # EveBox butuh folder ini ada
+touch auto_block/blocked_ips.log      # Dashboard & auto_block baca file ini
+echo '{}' > auto_block/alert_counts.json  # State persistensi counter IP
+if [[ ! -f dashboard/settings.json ]]; then
+    touch dashboard/settings.json
+fi
 
 # Inisialisasi settings.json
 cat > dashboard/settings.json << SETTINGS
@@ -166,7 +171,7 @@ cat > dashboard/settings.json << SETTINGS
   "secret_token": ""
 }
 SETTINGS
-success "settings.json dibuat"
+success "File runtime dibuat (eve.json, blocked_ips.log, alert_counts.json, settings.json)"
 
 # ══════════════════════════════════════════════════════════════════════════════
 header "4. Konfigurasi .env & docker-compose"
@@ -184,8 +189,8 @@ ENV
 success ".env dibuat"
 
 # Update interface jaringan di docker-compose.yml
-sed -i "s/command: -i .*/command: -i ${NET_IFACE}/" docker-compose.yml
-success "Interface ${NET_IFACE} dikonfigurasi di docker-compose.yml"
+sed -i "s|command: -i .*|command: -i ${NET_IFACE}|" docker-compose.yml
+success "Interface '${NET_IFACE}' dikonfigurasi di docker-compose.yml"
 
 # ══════════════════════════════════════════════════════════════════════════════
 header "5. Konfigurasi UFW Firewall"
