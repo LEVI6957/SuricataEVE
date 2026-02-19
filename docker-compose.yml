@@ -18,14 +18,14 @@ services:
   evebox:
     image: jasonish/evebox:latest
     container_name: evebox_ui
-    restart: unless-stopped
+    restart: on-failure
     ports:
       - "5636:5636"
     volumes:
       - ./logs:/var/log/suricata:ro # Baca log dari host (read-only)
       - evebox-data:/var/lib/evebox
     command: >
-      evebox server --datastore sqlite --data-directory /var/lib/evebox --input /var/log/suricata/eve.json
+      evebox server --datastore sqlite --data-directory /var/lib/evebox --eve-directory /var/log/suricata
     depends_on:
       - suricata
 
