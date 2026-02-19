@@ -76,8 +76,15 @@ fi
 cd "$INSTALL_DIR" || error "Failed to cd to ${INSTALL_DIR}"
 
 # ══════════════════════════════════════════════════════════════════════════════
-header "2. Rebuild & Restart Docker Containers"
+header "2. Fix Permissions & Restart"
 # ══════════════════════════════════════════════════════════════════════════════
+
+# Fix permissions on logs directory so EveBox (non-root) can access it
+if [ -d "logs" ]; then
+    info "Fixing permissions for logs directory..."
+    chmod -R 755 logs
+    chmod 644 logs/eve.json 2>/dev/null || touch logs/eve.json && chmod 644 logs/eve.json
+fi
 
 info "Rebuilding images (with cache to speed up)..."
 docker compose build
