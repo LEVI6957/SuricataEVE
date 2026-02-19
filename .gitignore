@@ -1,0 +1,22 @@
+# Environment
+.env
+
+# Logs & runtime data
+logs/
+*.log
+auto_block/blocked_ips.log
+auto_block/alert_counts.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db

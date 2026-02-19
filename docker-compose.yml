@@ -1,0 +1,80 @@
+services:
+  suricata:
+    image: jasonish/suricata:latest
+    container_name: suricata_main
+    restart: unless-stopped
+    network_mode: "host"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_NICE
+    volumes:
+      - ./logs:/var/log/suricata # Mount log ke host
+      - suricata-rules:/var/lib/suricata
+      - suricata-config:/etc/suricata
+    # Interface dibaca otomatis dari .env (di-set oleh install.sh)
+    command: -i ${NET_IFACE:-enp86s0}
+
+  evebox:
+    image: jasonish/evebox:latest
+    container_name: evebox_ui
+    restart: unless-stopped
+    ports:
+      - "5636:5636"
+    volumes:
+      - ./logs:/var/log/suricata:ro # Baca log dari host (read-only)
+      - evebox-data:/var/lib/evebox
+    command: >
+      evebox server --datastore sqlite --data-directory /var/lib/evebox --input /var/log/suricata/eve.json
+    depends_on:
+      - suricata
+
+  auto_block:
+    build:
+      context: ./auto_block
+      dockerfile: Dockerfile
+    container_name: auto_block
+    restart: unless-stopped
+    network_mode: "host"
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+    volumes:
+      - ./logs:/var/log/suricata:ro
+      - /etc/ufw:/etc/ufw
+      - /lib/ufw:/lib/ufw:ro
+      - ./auto_block/blocked_ips.log:/app/blocked_ips.log
+      - ./auto_block/alert_counts.json:/app/alert_counts.json
+    environment:
+      - EVE_LOG_PATH=/var/log/suricata/eve.json
+      - BLOCK_THRESHOLD=${BLOCK_THRESHOLD:-3}
+      - CHECK_INTERVAL=${CHECK_INTERVAL:-10}
+      - ALERT_SEVERITY=${ALERT_SEVERITY:-2}
+      - DASHBOARD_URL=http://127.0.0.1:${DASHBOARD_PORT:-8080}
+    depends_on:
+      - suricata
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: suricata_dashboard
+    restart: unless-stopped
+    ports:
+      # Bind ke IP server tertentu agar tidak bisa diakses sembarangan
+      # Ganti SERVER_IP di file .env dengan IP server kamu
+      - "${SERVER_IP:-0.0.0.0}:${DASHBOARD_PORT:-8080}:8080"
+    volumes:
+      - ./logs:/var/log/suricata:ro # Baca eve.json
+      - ./auto_block/blocked_ips.log:/app/blocked_ips.log # Baca log IP diblok
+      - ./dashboard/settings.json:/app/settings.json # Persistent settings
+    environment:
+      - EVE_LOG_PATH=/var/log/suricata/eve.json
+      - BLOCKED_LOG=/app/blocked_ips.log
+    depends_on:
+      - suricata
+
+volumes:
+  suricata-rules:
+  suricata-config:
+  evebox-data:

@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Suricata Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0e1a;
+            --surface: #111827;
+            --surface2: #1a2235;
+            --border: rgba(255, 255, 255, 0.07);
+            --accent: #6366f1;
+            --accent2: #818cf8;
+            --danger: #ef4444;
+            --warn: #f59e0b;
+            --success: #10b981;
+            --text: #e2e8f0;
+            --muted: #64748b;
+            --glass: rgba(17, 24, 39, 0.8);
+            --glow: 0 0 24px rgba(99, 102, 241, 0.15);
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            background-image:
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.12), transparent),
+                radial-gradient(ellipse 60% 40% at 80% 80%, rgba(16, 185, 129, 0.06), transparent);
+        }
+
+        /* ── Layout ─────────────────── */
+        .app {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        header {
+            background: var(--glass);
+            border-bottom: 1px solid var(--border);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 0 2rem;
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: .75rem;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        .logo .shield {
+            font-size: 1.4rem;
+        }
+
+        .logo span {
+            background: linear-gradient(135deg, var(--accent2), var(--success));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            font-size: .8rem;
+            color: var(--muted);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+
+        .dot.green {
+            background: var(--success);
+            box-shadow: 0 0 8px var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        .dot.red {
+            background: var(--danger);
+            box-shadow: 0 0 8px var(--danger);
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: .4;
+            }
+        }
+
+        main {
+            flex: 1;
+            padding: 2rem;
+            max-width: 1600px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* ── Stats Grid ─────────────────── */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.25rem;
+            margin-bottom: 2rem;
+        }
+
+        @media (max-width: 900px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            position: relative;
+            overflow: hidden;
+            transition: transform .2s, box-shadow .2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--glow);
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, .02), transparent);
+            pointer-events: none;
+        }
+
+        .stat-icon {
+            font-size: 2rem;
+            margin-bottom: .75rem;
+        }
+
+        .stat-value {
+            font-size: 2.2rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: .25rem;
+        }
+
+        .stat-label {
+            font-size: .8rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+        }
+
+        .stat-card.danger .stat-value {
+            color: var(--danger);
+        }
+
+        .stat-card.warn .stat-value {
+            color: var(--warn);
+        }
+
+        .stat-card.accent .stat-value {
+            color: var(--accent2);
+        }
+
+        .stat-card.success .stat-value {
+            color: var(--success);
+        }
+
+        /* ── Main Grid ─────────────────── */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 420px;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 1100px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, .02);
+        }
+
+        .panel-title {
+            font-weight: 600;
+            font-size: .95rem;
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+        }
+
+        .badge {
+            background: rgba(99, 102, 241, .15);
+            color: var(--accent2);
+            font-size: .7rem;
+            padding: .2rem .55rem;
+            border-radius: 99px;
+            font-weight: 600;
+        }
+
+        .badge.red {
+            background: rgba(239, 68, 68, .15);
+            color: var(--danger);
+        }
+
+        .badge.green {
+            background: rgba(16, 185, 129, .15);
+            color: var(--success);
+        }
+
+        /* ── Live Feed ─────────────────── */
+        #live-feed {
+            height: 480px;
+            overflow-y: auto;
+            padding: .75rem;
+            display: flex;
+            flex-direction: column;
+            gap: .4rem;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+
+        .alert-item {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: .65rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: .75rem;
+            animation: slideIn .25s ease;
+            font-size: .82rem;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .alert-item.blocked {
+            border-color: rgba(239, 68, 68, .3);
+            background: rgba(239, 68, 68, .06);
+        }
+
+        .alert-item.unblocked {
+            border-color: rgba(16, 185, 129, .3);
+            background: rgba(16, 185, 129, .06);
+        }
+
+        .sev-badge {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: .7rem;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .sev-1 {
+            background: rgba(239, 68, 68, .2);
+            color: var(--danger);
+        }
+
+        .sev-2 {
+            background: rgba(245, 158, 11, .2);
+            color: var(--warn);
+        }
+
+        .sev-3 {
+            background: rgba(99, 102, 241, .2);
+            color: var(--accent2);
+        }
+
+        .alert-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .alert-sig {
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .alert-meta {
+            color: var(--muted);
+            font-size: .74rem;
+            margin-top: 2px;
+        }
+
+        .alert-ip {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .8rem;
+            flex-shrink: 0;
+        }
+
+        /* ── Blocked IPs Table ─────────────────── */
+        #blocked-list {
+            max-height: 480px;
+            overflow-y: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: .82rem;
+        }
+
+        th {
+            text-align: left;
+            padding: .65rem 1rem;
+            color: var(--muted);
+            font-weight: 600;
+            border-bottom: 1px solid var(--border);
+            text-transform: uppercase;
+            font-size: .72rem;
+            letter-spacing: .05em;
+        }
+
+        td {
+            padding: .65rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, .03);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, .02);
+        }
+
+        .ip-mono {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--danger);
+        }
+
+        .btn-unblock {
+            background: rgba(239, 68, 68, .1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, .3);
+            padding: .25rem .7rem;
+            border-radius: 6px;
+            font-size: .75rem;
+            cursor: pointer;
+            transition: all .2s;
+            font-family: inherit;
+        }
+
+        .btn-unblock:hover {
+            background: rgba(239, 68, 68, .2);
+        }
+
+        /* ── Bottom Row ─────────────────── */
+        .bottom-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        @media (max-width: 900px) {
+            .bottom-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* ── Settings / Webhook Panel ─────────────────── */
+        .form-row {
+            padding: 1.25rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: .4rem;
+        }
+
+        label {
+            font-size: .8rem;
+            color: var(--muted);
+            font-weight: 500;
+        }
+
+        input,
+        select {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            padding: .55rem .9rem;
+            font-size: .85rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color .2s;
+        }
+
+        input:focus,
+        select:focus {
+            border-color: var(--accent);
+        }
+
+        input[type=number] {
+            width: 100%;
+        }
+
+        .btn {
+            padding: .55rem 1.2rem;
+            border-radius: 8px;
+            border: none;
+            font-family: inherit;
+            font-size: .85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all .2s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent2);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: var(--surface2);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, .06);
+        }
+
+        .btn-sm {
+            padding: .38rem .9rem;
+            font-size: .78rem;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: .75rem;
+            flex-wrap: wrap;
+        }
+
+        /* ── Webhook Log ─────────────────── */
+        #webhook-log-list {
+            padding: .75rem;
+            display: flex;
+            flex-direction: column;
+            gap: .4rem;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        .wh-entry {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: .5rem .85rem;
+            font-size: .78rem;
+            display: flex;
+            gap: .75rem;
+            align-items: center;
+        }
+
+        .wh-status {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+        }
+
+        .wh-status.ok {
+            color: var(--success);
+        }
+
+        .wh-status.err {
+            color: var(--danger);
+        }
+
+        .wh-ts {
+            color: var(--muted);
+            font-size: .72rem;
+        }
+
+        /* ── Scrollbar ─────────────────── */
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 99px;
+        }
+
+        /* ── Toast ─────────────────── */
+        .toast-area {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            z-index: 999;
+            display: flex;
+            flex-direction: column;
+            gap: .5rem;
+        }
+
+        .toast {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: .75rem 1.25rem;
+            font-size: .83rem;
+            animation: toastIn .3s ease;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, .4);
+        }
+
+        @keyframes toastIn {
+            from {
+                opacity: 0;
+                transform: translateX(40px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .toast.success {
+            border-color: rgba(16, 185, 129, .4);
+            color: var(--success);
+        }
+
+        .toast.error {
+            border-color: rgba(239, 68, 68, .4);
+            color: var(--danger);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 2.5rem 1rem;
+            color: var(--muted);
+            font-size: .85rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <header>
+            <div class="logo">
+                <span class="shield">🛡️</span>
+                <span>Suricata Dashboard</span>
+            </div>
+            <div class="status-bar">
+                <span id="ws-status"><span class="dot red" id="ws-dot"></span>Disconnected</span>
+                <span>⏱ Uptime: <b id="uptime-val">—</b></span>
+                <span>👥 Clients: <b id="clients-val">—</b></span>
+            </div>
+        </header>
+
+        <main>
+            <!-- Stats Row -->
+            <div class="stats-grid">
+                <div class="stat-card warn">
+                    <div class="stat-icon">⚠️</div>
+                    <div class="stat-value" id="stat-alerts">0</div>
+                    <div class="stat-label">Total Alerts</div>
+                </div>
+                <div class="stat-card danger">
+                    <div class="stat-icon">🔒</div>
+                    <div class="stat-value" id="stat-blocked">0</div>
+                    <div class="stat-label">IP Diblok</div>
+                </div>
+                <div class="stat-card accent">
+                    <div class="stat-icon">🌐</div>
+                    <div class="stat-value" id="stat-top-ip">—</div>
+                    <div class="stat-label">Top Attacker</div>
+                </div>
+                <div class="stat-card success">
+                    <div class="stat-icon">📡</div>
+                    <div class="stat-value" id="stat-live">LIVE</div>
+                    <div class="stat-label">Feed Status</div>
+                </div>
+            </div>
+
+            <!-- Main Grid: Feed + Blocked -->
+            <div class="main-grid">
+                <!-- Live Alert Feed -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">📡 Live Alert Feed <span class="badge" id="feed-count">0</span></div>
+                        <button class="btn btn-secondary btn-sm" onclick="clearFeed()">Clear</button>
+                    </div>
+                    <div id="live-feed">
+                        <div class="empty-state">Menunggu alert dari Suricata...</div>
+                    </div>
+                </div>
+
+                <!-- Blocked IPs -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">🔒 IP Diblok <span class="badge red" id="blocked-count">0</span></div>
+                        <button class="btn btn-secondary btn-sm" onclick="refreshBlocked()">↺ Refresh</button>
+                    </div>
+                    <div id="blocked-list">
+                        <div class="empty-state">Belum ada IP yang diblok.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Row: Webhook + Settings -->
+            <div class="bottom-row">
+                <!-- Webhook Settings -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">🔔 Webhook Notifikasi</div>
+                    </div>
+                    <div class="form-row">
+                        <div class="field">
+                            <label>Webhook URL</label>
+                            <input id="wh-url" type="url"
+                                placeholder="https://hooks.slack.com/... atau Telegram/Discord" />
+                        </div>
+                        <div class="field">
+                            <label>Custom Headers (JSON, opsional)</label>
+                            <input id="wh-headers" type="text" placeholder='{"Authorization": "Bearer ..."}' />
+                        </div>
+                        <div class="btn-row">
+                            <button class="btn btn-primary btn-sm" onclick="saveWebhook()">💾 Simpan</button>
+                            <button class="btn btn-secondary btn-sm" onclick="testWebhook()">🧪 Test Webhook</button>
+                        </div>
+                        <div>
+                            <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;font-weight:600;">Log
+                                Terakhir</div>
+                            <div id="webhook-log-list">
+                                <div class="empty-state" style="padding:.75rem">Belum ada pengiriman.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">⚙️ Konfigurasi Auto Block</div>
+                    </div>
+                    <div class="form-row">
+                        <div class="field">
+                            <label>Block Threshold (jumlah alert sebelum IP diblok)</label>
+                            <input id="set-threshold" type="number" min="1" max="100" value="3" />
+                        </div>
+                        <div class="field">
+                            <label>Minimum Severity (1=High, 2=Medium, 3=Low)</label>
+                            <select id="set-severity">
+                                <option value="1">1 — High Only</option>
+                                <option value="2" selected>2 — Medium & High</option>
+                                <option value="3">3 — Semua Alert</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Secret Token (untuk API access, kosongkan = off)</label>
+                            <input id="set-token" type="password" placeholder="••••••••" />
+                        </div>
+                        <div class="btn-row">
+                            <button class="btn btn-primary btn-sm" onclick="saveSettings()">💾 Simpan
+                                Pengaturan</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="toast-area" id="toast-area"></div>
+
+    <script>
+        // ── State ──────────────────────────────────
+        let feedCount = 0;
+        let ws = null;
+
+        // ── Toast ──────────────────────────────────
+        function toast(msg, type = 'success') {
+            const el = document.createElement('div');
+            el.className = `toast ${type}`;
+            el.textContent = msg;
+            document.getElementById('toast-area').appendChild(el);
+            setTimeout(() => el.remove(), 3500);
+        }
+
+        // ── WebSocket ─────────────────────────────
+        function connectWS() {
+            const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+            ws.onopen = () => {
+                document.getElementById('ws-dot').className = 'dot green';
+                document.getElementById('ws-status').innerHTML =
+                    '<span class="dot green" id="ws-dot"></span>Connected';
+            };
+
+            ws.onmessage = (e) => {
+                const ev = JSON.parse(e.data);
+                handleEvent(ev);
+            };
+
+            ws.onclose = () => {
+                document.getElementById('ws-dot').className = 'dot red';
+                document.getElementById('ws-status').innerHTML =
+                    '<span class="dot red" id="ws-dot"></span>Disconnected';
+                document.getElementById('stat-live').textContent = 'OFF';
+                setTimeout(connectWS, 3000); // Reconnect
+            };
+        }
+
+        // ── Handle incoming event ─────────────────
+        function handleEvent(ev) {
+            if (ev.type === 'alert' || ev.type === 'blocked') {
+                prependAlert(ev);
+            }
+            if (ev.type === 'blocked') {
+                prependBlockedRow(ev);
+            }
+            if (ev.type === 'unblocked') {
+                removeBlockedRow(ev.ip);
+                toast(`✅ IP ${ev.ip} berhasil di-unblock`, 'success');
+            }
+        }
+
+        // ── Feed ──────────────────────────────────
+        function prependAlert(ev) {
+            const feed = document.getElementById('live-feed');
+            // Hapus empty state jika ada
+            const empty = feed.querySelector('.empty-state');
+            if (empty) empty.remove();
+
+            feedCount++;
+            document.getElementById('feed-count').textContent = feedCount;
+
+            const ts = new Date(ev.timestamp).toLocaleTimeString('id-ID');
+            const sevClass = `sev-${ev.severity || 3}`;
+            const sevLabel = ev.severity === 1 ? 'H' : ev.severity === 2 ? 'M' : 'L';
+            const isBlocked = ev.type === 'blocked';
+
+            const item = document.createElement('div');
+            item.className = `alert-item${isBlocked ? ' blocked' : ''}`;
+            item.innerHTML = `
+    <div class="sev-badge ${sevClass}">${sevLabel}</div>
+    <div class="alert-body">
+      <div class="alert-sig">${isBlocked ? '🔒 ' : ''}${escHtml(ev.signature)}</div>
+      <div class="alert-meta">${escHtml(ev.category || '')} · ${ts} · Hit: ${ev.count || 1}/${ev.threshold || '?'}</div>
+    </div>
+    <div class="alert-ip">${escHtml(ev.src_ip)}</div>
+  `;
+            feed.insertBefore(item, feed.firstChild);
+
+            // Keep max 200
+            const items = feed.querySelectorAll('.alert-item');
+            if (items.length > 200) items[items.length - 1].remove();
+        }
+
+        function clearFeed() {
+            document.getElementById('live-feed').innerHTML = '<div class="empty-state">Feed dibersihkan.</div>';
+            feedCount = 0;
+            document.getElementById('feed-count').textContent = '0';
+        }
+
+        // ── Blocked Table ─────────────────────────
+        function prependBlockedRow(ev) {
+            const list = document.getElementById('blocked-list');
+            const empty = list.querySelector('.empty-state');
+            if (empty) {
+                list.innerHTML = '<table><thead><tr><th>IP</th><th>Signature</th><th>Hit</th><th></th></tr></thead><tbody id="blocked-tbody"></tbody></table>';
+            }
+            let tbody = document.getElementById('blocked-tbody');
+            if (!tbody) {
+                const tbl = document.createElement('table');
+                tbl.innerHTML = '<thead><tr><th>IP</th><th>Signature</th><th>Hit</th><th></th></tr></thead><tbody id="blocked-tbody"></tbody>';
+                list.innerHTML = '';
+                list.appendChild(tbl);
+                tbody = document.getElementById('blocked-tbody');
+            }
+
+            // Cek duplikat
+            if (document.getElementById(`row-${ev.src_ip?.replace(/[.:]/g, '_')}`)) return;
+
+            const ts = new Date(ev.timestamp).toLocaleString('id-ID');
+            const rowId = `row-${ev.src_ip?.replace(/[.:]/g, '_')}`;
+            const tr = document.createElement('tr');
+            tr.id = rowId;
+            tr.innerHTML = `
+    <td class="ip-mono">${escHtml(ev.src_ip)}</td>
+    <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(ev.signature)}">${escHtml(ev.signature)}</td>
+    <td>${ev.count || '?'}</td>
+    <td><button class="btn-unblock" onclick="unblockIP('${escHtml(ev.src_ip)}')">Unblock</button></td>
+  `;
+            tbody.insertBefore(tr, tbody.firstChild);
+            document.getElementById('blocked-count').textContent =
+                (parseInt(document.getElementById('blocked-count').textContent) || 0) + 1;
+        }
+
+        function removeBlockedRow(ip) {
+            const rowId = `row-${ip.replace(/[.:]/g, '_')}`;
+            const row = document.getElementById(rowId);
+            if (row) row.remove();
+            const cur = parseInt(document.getElementById('blocked-count').textContent) || 0;
+            document.getElementById('blocked-count').textContent = Math.max(0, cur - 1);
+        }
+
+        async function refreshBlocked() {
+            const res = await fetch('/api/blocked');
+            const list = await res.json();
+            const container = document.getElementById('blocked-list');
+
+            if (!list.length) {
+                container.innerHTML = '<div class="empty-state">Belum ada IP yang diblok.</div>';
+                document.getElementById('blocked-count').textContent = '0';
+                return;
+            }
+
+            container.innerHTML = `
+    <table>
+      <thead><tr><th>IP</th><th>Signature</th><th>Hit</th><th>Waktu</th><th></th></tr></thead>
+      <tbody id="blocked-tbody">
+        ${list.map(b => `
+          <tr id="row-${b.ip?.replace(/[.:]/g, '_')}">
+            <td class="ip-mono">${escHtml(b.ip)}</td>
+            <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                title="${escHtml(b.signature)}">${escHtml(b.signature)}</td>
+            <td>${b.count || '?'}</td>
+            <td style="font-size:.75rem;color:var(--muted)">${escHtml(b.timestamp || '')}</td>
+            <td><button class="btn-unblock" onclick="unblockIP('${escHtml(b.ip)}')">Unblock</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>`;
+            document.getElementById('blocked-count').textContent = list.length;
+        }
+
+        async function unblockIP(ip) {
+            if (!confirm(`Unblock IP ${ip}?`)) return;
+            try {
+                const r = await fetch(`/api/unblock/${encodeURIComponent(ip)}`, { method: 'POST' });
+                if (r.ok) {
+                    removeBlockedRow(ip);
+                    toast(`✅ ${ip} berhasil di-unblock`);
+                } else {
+                    const err = await r.json();
+                    toast(`❌ Gagal: ${err.detail}`, 'error');
+                }
+            } catch (e) { toast(`❌ Error: ${e}`, 'error'); }
+        }
+
+        // ── Stats Polling ─────────────────────────
+        async function pollStats() {
+            try {
+                const r = await fetch('/api/stats');
+                const s = await r.json();
+                document.getElementById('stat-alerts').textContent = s.total_alerts;
+                document.getElementById('stat-blocked').textContent = s.total_blocked;
+                document.getElementById('clients-val').textContent = s.active_clients;
+
+                const h = Math.floor(s.uptime_seconds / 3600);
+                const m = Math.floor((s.uptime_seconds % 3600) / 60);
+                document.getElementById('uptime-val').textContent = `${h}h ${m}m`;
+
+                if (s.top_attackers?.length) {
+                    document.getElementById('stat-top-ip').textContent = s.top_attackers[0].ip;
+                }
+            } catch (e) { }
+        }
+
+        // ── Webhook ───────────────────────────────
+        async function testWebhook() {
+            try {
+                const r = await fetch('/api/webhook/test', { method: 'POST' });
+                const j = await r.json();
+                toast('🧪 Test webhook terkirim!');
+                refreshWebhookLog();
+            } catch (e) { toast('❌ Gagal kirim test', 'error'); }
+        }
+
+        async function saveWebhook() {
+            const url = document.getElementById('wh-url').value.trim();
+            let headers = {};
+            const raw = document.getElementById('wh-headers').value.trim();
+            if (raw) {
+                try { headers = JSON.parse(raw); }
+                catch (e) { toast('❌ Headers bukan JSON valid', 'error'); return; }
+            }
+            try {
+                await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ webhook_url: url, webhook_headers: headers })
+                });
+                toast('✅ Webhook disimpan');
+            } catch (e) { toast('❌ Gagal simpan', 'error'); }
+        }
+
+        async function refreshWebhookLog() {
+            try {
+                const r = await fetch('/api/webhook/log');
+                const logs = await r.json();
+                const el = document.getElementById('webhook-log-list');
+                if (!logs.length) {
+                    el.innerHTML = '<div class="empty-state" style="padding:.75rem">Belum ada pengiriman.</div>';
+                    return;
+                }
+                el.innerHTML = logs.map(l => `
+      <div class="wh-entry">
+        <span class="wh-status ${l.status && l.status < 400 ? 'ok' : 'err'}">
+          ${l.status || (l.error ? 'ERR' : '?')}
+        </span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${escHtml(l.url)}</span>
+        <span class="wh-ts">${l.timestamp}</span>
+      </div>`).join('');
+            } catch (e) { }
+        }
+
+        // ── Settings ──────────────────────────────
+        async function loadSettings() {
+            try {
+                const r = await fetch('/api/settings');
+                if (!r.ok) return;
+                const s = await r.json();
+                if (s.webhook_url) document.getElementById('wh-url').value = s.webhook_url;
+                if (s.threshold) document.getElementById('set-threshold').value = s.threshold;
+                if (s.severity) document.getElementById('set-severity').value = s.severity;
+            } catch (e) { }
+        }
+
+        async function saveSettings() {
+            const payload = {
+                threshold: parseInt(document.getElementById('set-threshold').value),
+                severity: parseInt(document.getElementById('set-severity').value),
+                secret_token: document.getElementById('set-token').value,
+            };
+            try {
+                await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                toast('✅ Pengaturan disimpan');
+            } catch (e) { toast('❌ Gagal simpan', 'error'); }
+        }
+
+        // ── Util ──────────────────────────────────
+        function escHtml(str) {
+            return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // ── Init ──────────────────────────────────
+        connectWS();
+        refreshBlocked();
+        loadSettings();
+        refreshWebhookLog();
+        pollStats();
+        setInterval(pollStats, 10000);
+        setInterval(refreshWebhookLog, 15000);
+    </script>
+</body>
+
+</html>
