@@ -143,21 +143,26 @@ def update_state_unblock(ip: str):
 
 def load_initial_blocked():
     """Load blocked IPs dari state file + metadata dari log."""
-    global blocked_ips
+    global blocked_ips, alert_counts
     if not os.path.exists(ALERT_COUNTS):
         return
 
     try:
-        # 1. Baca siapa yang sedang diblok
+        # Load JSON
         with open(ALERT_COUNTS, "r") as f:
             data = json.load(f)
+            
+        # 1. Restore counters (untuk Top Attackers stats)
+        saved_counts = data.get("alert_counts", {})
+        for k, v in saved_counts.items():
+            alert_counts[k] = v
+
+        # 2. Restore Blocked List
         blocked_set = set(data.get("blocked_ips", []))
-        
         if not blocked_set:
             return
 
-        # 2. Cari metadata (signature, timestamp) dari log file
-        # Kita baca log dari bawah ke atas (reverse) untuk ambil event BLOCKED terakhir per IP
+        # 3. Cari metadata (signature, timestamp) dari log file
         meta_map = {}
         if os.path.exists(BLOCKED_LOG):
             with open(BLOCKED_LOG, "r") as f:
@@ -170,7 +175,7 @@ def load_initial_blocked():
                         if ip in blocked_set and ip not in meta_map:
                             meta_map[ip] = {"ts": ts, "sig": sig}
         
-        # 3. Gabungkan
+        # 4. Gabungkan (gunakan count dari state)
         new_list = []
         for ip in blocked_set:
             meta = meta_map.get(ip, {"ts": "Unknown", "sig": "Unknown"})
@@ -178,7 +183,7 @@ def load_initial_blocked():
                 "ip": ip,
                 "timestamp": meta["ts"],
                 "signature": meta["sig"],
-                "count": 0 # Count tidak tersimpan di blocked_ips log, anggap 0 atau placeholder
+                "count": alert_counts.get(ip, 0)
             })
         
         blocked_ips = new_list
