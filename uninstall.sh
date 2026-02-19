@@ -89,26 +89,39 @@ done
 header "2. Hapus Docker Images (safety net)"
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Cakup berbagai kemungkinan nama image berdasarkan project dir name
-# Project dir /opt/suricata-dashboard → nama image: suricata-dashboard-<service>
-# Project dir ~/SuricataEVE           → nama image: suricataeve-<service>
-IMAGES=(
-    "jasonish/suricata:latest"
-    "jasonish/evebox:latest"
+# Hapus hanya images yang di-BUILD oleh project ini
+# (docker compose down --rmi local sudah handle ini, ini hanya safety net)
+# Nama image bergantung pada nama folder project saat docker compose build:
+# /opt/suricata-dashboard → suricata-dashboard-dashboard, suricata-dashboard-auto_block
+# ~/SuricataEVE           → suricataeve-dashboard, suricataeve-auto_block
+BUILT_IMAGES=(
     "suricata-dashboard-dashboard"
     "suricata-dashboard-auto_block"
     "suricataeve-dashboard"
     "suricataeve-auto_block"
 )
 
-for img in "${IMAGES[@]}"; do
+for img in "${BUILT_IMAGES[@]}"; do
     if docker image inspect "$img" &>/dev/null; then
         docker rmi -f "$img" 2>/dev/null && success "Image '${img}' dihapus"
     fi
 done
 
-# Hapus dangling images saja (bukan semua unused — jangan hapus image user lain)
-docker image prune -f &>/dev/null && success "Dangling images dibersihkan"
+# Tanya apakah hapus juga pulled images (jasonish/*)
+# HATI-HATI: skip jika images ini dipakai project Docker lain
+echo ""
+read -rp "$(echo -e "${YELLOW}Hapus juga image jasonish/suricata & jasonish/evebox?${NC} (mungkin dipakai project lain) [y/N]: ")" RM_PULLED
+if [[ "${RM_PULLED,,}" == "y" ]]; then
+    for img in "jasonish/suricata:latest" "jasonish/evebox:latest"; do
+        if docker image inspect "$img" &>/dev/null; then
+            docker rmi -f "$img" 2>/dev/null && success "Image '${img}' dihapus"
+        fi
+    done
+else
+    info "Pulled images dilewati (aman untuk project Docker lain)"
+fi
+# TIDAK menjalankan 'docker image prune' — berbahaya karena bisa hapus
+# dangling images dari project Docker lain yang tidak ada kaitannya
 
 # ══════════════════════════════════════════════════════════════════════════════
 header "3. Hapus Docker Volumes (safety net)"
