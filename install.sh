@@ -162,23 +162,27 @@ if [[ ! -f dashboard/settings.json ]]; then
 fi
 
 # Inisialisasi settings.json
-cat > dashboard/settings.json << SETTINGS
+if [[ ! -f dashboard/settings.json ]]; then
+    cat > dashboard/settings.json << SETTINGS
 {
   "webhook_url": "${WEBHOOK_URL}",
   "webhook_headers": {},
   "threshold": ${BLOCK_THRESHOLD},
   "severity": ${ALERT_SEVERITY},
-  "interval": 10,
-  "secret_token": ""
+  "interval": 10
 }
 SETTINGS
-success "File runtime dibuat (eve.json, blocked_ips.log, alert_counts.json, settings.json)"
+    success "File dashboard/settings.json dibuat"
+else
+    info "File dashboard/settings.json sudah ada, skip pembuatan baru."
+fi
 
 # ══════════════════════════════════════════════════════════════════════════════
 header "4. Konfigurasi .env & docker-compose"
 # ══════════════════════════════════════════════════════════════════════════════
 
-cat > .env << ENV
+if [[ ! -f .env ]]; then
+    cat > .env << ENV
 SERVER_IP=${SERVER_IP}
 DASHBOARD_PORT=${DASHBOARD_PORT}
 NET_IFACE=${NET_IFACE}
@@ -187,11 +191,15 @@ ALERT_SEVERITY=${ALERT_SEVERITY}
 CHECK_INTERVAL=10
 WEBHOOK_URL=${WEBHOOK_URL}
 ENV
-success ".env dibuat"
+    success ".env dibuat"
+else
+    info ".env sudah ada, skip pembuatan baru (gunakan update.sh untuk update code)."
+fi
 
-# Update interface jaringan di docker-compose.yml
-sed -i "s|command: -i .*|command: -i ${NET_IFACE}|" docker-compose.yml
-success "Interface '${NET_IFACE}' dikonfigurasi di docker-compose.yml"
+# Update interface jaringan di docker-compose.yml tidak diperlukan lagi
+# karena docker-compose.yml sudah menggunakan variabel ${NET_IFACE} dari .env
+# sed -i "s|command: -i .*|command: -i ${NET_IFACE}|" docker-compose.yml
+# success "Interface '${NET_IFACE}' dikonfigurasi di docker-compose.yml"
 
 # ══════════════════════════════════════════════════════════════════════════════
 header "5. Konfigurasi UFW Firewall"
