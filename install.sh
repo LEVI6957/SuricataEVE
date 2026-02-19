@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 #  install.sh — Suricata Auto Block Dashboard
+#  Author  : Levi (github.com/LEVI6957)
 #  1x jalankan di Ubuntu Server, semua langsung beres.
 #  Usage: sudo bash install.sh
 # =============================================================================

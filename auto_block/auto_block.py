@@ -3,6 +3,8 @@
 auto_block.py — Auto Firewall Blocking berbasis Suricata eve.json
 Membaca log Suricata real-time, memblok IP via UFW, dan
 mengirim event ke dashboard via HTTP internal.
+
+Author: Levi (github.com/LEVI6957)
 """
 
 import asyncio

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 #  uninstall.sh — Suricata Auto Block Dashboard
+#  Author  : Levi (github.com/LEVI6957)
 #  Hapus semua container, volume, image, rules UFW, service systemd, & folder.
 #  Usage: sudo bash uninstall.sh
 # =============================================================================

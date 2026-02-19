@@ -1,6 +1,8 @@
 """
 app.py — Suricata Auto Block Dashboard
 FastAPI backend: REST API + WebSocket real-time + Webhook outbound
+
+Author: Levi (github.com/LEVI6957)
 """
 
 import asyncio

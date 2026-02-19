@@ -1,3 +1,4 @@
+# Suricata Auto Block Dashboard — by Levi (github.com/LEVI6957)
 services:
   suricata:
     image: jasonish/suricata:latest
