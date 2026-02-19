@@ -61,17 +61,23 @@ services:
       dockerfile: Dockerfile
     container_name: suricata_dashboard
     restart: unless-stopped
-    ports:
-      # Bind ke IP server tertentu agar tidak bisa diakses sembarangan
-      # Ganti SERVER_IP di file .env dengan IP server kamu
-      - "${SERVER_IP:-0.0.0.0}:${DASHBOARD_PORT:-8080}:8080"
+    network_mode: "host"
+    cap_add:
+      - NET_ADMIN
+    privileged: true
     volumes:
       - ./logs:/var/log/suricata:ro # Baca eve.json
       - ./auto_block/blocked_ips.log:/app/blocked_ips.log # Baca log IP diblok
+      - ./auto_block/alert_counts.json:/app/alert_counts.json # Sync state
       - ./dashboard/settings.json:/app/settings.json # Persistent settings
+      - /etc/ufw:/etc/ufw # Akses UFW host
+      - /lib/ufw:/lib/ufw:ro # Akses lib UFW host
     environment:
       - EVE_LOG_PATH=/var/log/suricata/eve.json
       - BLOCKED_LOG=/app/blocked_ips.log
+      - ALERT_COUNTS=/app/alert_counts.json
+    command: >
+      uvicorn app:app --host ${SERVER_IP:-0.0.0.0} --port ${DASHBOARD_PORT:-8080} --log-level info
     depends_on:
       - suricata
 

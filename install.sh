@@ -239,8 +239,8 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=/usr/bin/docker compose up -d
-ExecStop=/usr/bin/docker compose down
+ExecStart=$(which docker) compose up -d
+ExecStop=$(which docker) compose down
 TimeoutStartSec=300
 
 [Install]

@@ -61,18 +61,51 @@ log = logging.getLogger("auto_block")
 alert_counts: dict = defaultdict(int)
 blocked_ips:  set  = set()
 running = True
-
+last_state_mtime = 0
 
 def load_state():
     """Load alert_counts dan blocked_ips dari file (bertahan saat restart)."""
-    global alert_counts, blocked_ips
+    global alert_counts, blocked_ips, last_state_mtime
     if os.path.exists(STATE_FILE):
         try:
+            mtime = os.path.getmtime(STATE_FILE)
+            if mtime == last_state_mtime:
+                return # Tidak ada perubahan
+
             with open(STATE_FILE, "r") as f:
                 data = json.load(f)
-            alert_counts = defaultdict(int, data.get("alert_counts", {}))
-            blocked_ips  = set(data.get("blocked_ips", []))
-            log.info(f"State di-load: {len(alert_counts)} IP tercatat, {len(blocked_ips)} diblok")
+            
+            # Update in-memory state
+            # Perhatian: kita replace total agar sinkron dengan dashboard
+            # Tapi warning: alert_counts memory mungkin punya data baru yang belum di-save?
+            # Idealnya merge, tapi untuk simpel, kita percaya disk jika unblock terjadi.
+            # Namun, app.py hanya ubah saat unblock. auto_block ubah saat nambah count.
+            # Race condition mungkin terjadi, tapi UFW unblock > counter increment.
+            
+            disk_counts = data.get("alert_counts", {})
+            disk_blocked = set(data.get("blocked_ips", []))
+            
+            # Merge logic:
+            # Jika IP ada di disk_blocked, masukkan ke blocked_ips (prioritas disk)
+            # Jika IP TIDAK ada di disk_blocked, hapus dari blocked_ips (dashboard unblock)
+            blocked_ips = disk_blocked 
+            
+            # Untuk counts, jika dashboard reset (hapus key), kita ikut reset
+            # Jika key ada di disk, kita pakai nilai disk (mungkin di-reset jadi 0)
+            # Tapi kita pertahankan count memory untuk IP lain yang aktif
+            for ip, count in disk_counts.items():
+                alert_counts[ip] = count
+                
+            # Hapus count jika di disk eksplisit tidak ada tapi di memory ada? 
+            # App.py saat unblock akan menghapus key dari alert_counts di disk.
+            # Jadi kita harus iterasi memory dan hapus yang tidak ada di disk?
+            # Tidak, karena auto_block mungkin baru saja nambah counter memory yang belum di-save.
+            # SOLUSI: App.py set count = 0 di disk, BUKAN hapus key.
+            # Auto block baca count 0 -> update memory jadi 0.
+            
+            last_state_mtime = mtime
+            log.info(f"State reload dari disk: {len(blocked_ips)} IP diblok")
+            
         except Exception as e:
             log.warning(f"Gagal load state: {e}")
 
@@ -169,7 +202,15 @@ def tail_eve_json(filepath: str):
                 time.sleep(0.3)
                 continue
             line = line.strip()
+            line = line.strip()
             if line:
+                # Cek apakah state file berubah (misal di-unblock dari dashboard)
+                # Lakukan check setiap 100 baris atau setiap interval waktu tertentu agar tidak berat IO
+                # Disini kita cek setiap line untuk responsivitas maksimal dengan asumsi OS cache file stat efisien
+                if os.path.exists(STATE_FILE):
+                    if os.path.getmtime(STATE_FILE) > last_state_mtime:
+                        load_state()
+                        
                 yield line
 
 

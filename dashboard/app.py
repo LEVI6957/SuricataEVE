@@ -29,6 +29,7 @@ from pydantic import BaseModel
 # ─── Config ───────────────────────────────────────────────────────────────────
 EVE_LOG_PATH  = os.getenv("EVE_LOG_PATH",  "/var/log/suricata/eve.json")
 BLOCKED_LOG   = os.getenv("BLOCKED_LOG",   "/app/blocked_ips.log")
+ALERT_COUNTS  = os.getenv("ALERT_COUNTS",  "/app/alert_counts.json")
 SETTINGS_FILE = "/app/settings.json"
 
 logging.basicConfig(
@@ -112,6 +113,79 @@ async def send_webhook(payload: dict):
 
     webhook_log.appendleft(result_entry)
 
+
+# ─── State Sync Helper ──────────────────────────────────────────────────────
+# Sinkronisasi dengan auto_block.py lewat file JSON
+def update_state_unblock(ip: str):
+    """Hapus IP dari alert_counts.json dan reset counter-nya."""
+    if not os.path.exists(ALERT_COUNTS):
+        return
+    try:
+        with open(ALERT_COUNTS, "r") as f:
+            data = json.load(f)
+        
+        # Hapus dari blocked_ips
+        current_blocked = set(data.get("blocked_ips", []))
+        if ip in current_blocked:
+            current_blocked.remove(ip)
+            data["blocked_ips"] = list(current_blocked)
+        
+        # Reset counter jadi 0 (agar tidak langsung diblok lagi)
+        counts = data.get("alert_counts", {})
+        if ip in counts:
+            counts[ip] = 0
+            data["alert_counts"] = counts
+            
+        with open(ALERT_COUNTS, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        log.error(f"Gagal update state unblock: {e}")
+
+def load_initial_blocked():
+    """Load blocked IPs dari state file + metadata dari log."""
+    global blocked_ips
+    if not os.path.exists(ALERT_COUNTS):
+        return
+
+    try:
+        # 1. Baca siapa yang sedang diblok
+        with open(ALERT_COUNTS, "r") as f:
+            data = json.load(f)
+        blocked_set = set(data.get("blocked_ips", []))
+        
+        if not blocked_set:
+            return
+
+        # 2. Cari metadata (signature, timestamp) dari log file
+        # Kita baca log dari bawah ke atas (reverse) untuk ambil event BLOCKED terakhir per IP
+        meta_map = {}
+        if os.path.exists(BLOCKED_LOG):
+            with open(BLOCKED_LOG, "r") as f:
+                lines = f.readlines()
+                for line in reversed(lines):
+                    # Format: YYYY-MM-DD HH:MM:SS UTC | BLOCKED | IP | Signature
+                    parts = line.strip().split(" | ")
+                    if len(parts) >= 4 and parts[1] == "BLOCKED":
+                        ts, _, ip, sig = parts[0], parts[1], parts[2], parts[3]
+                        if ip in blocked_set and ip not in meta_map:
+                            meta_map[ip] = {"ts": ts, "sig": sig}
+        
+        # 3. Gabungkan
+        new_list = []
+        for ip in blocked_set:
+            meta = meta_map.get(ip, {"ts": "Unknown", "sig": "Unknown"})
+            new_list.append({
+                "ip": ip,
+                "timestamp": meta["ts"],
+                "signature": meta["sig"],
+                "count": 0 # Count tidak tersimpan di blocked_ips log, anggap 0 atau placeholder
+            })
+        
+        blocked_ips = new_list
+        log.info(f"Loaded {len(blocked_ips)} blocked IPs from state.")
+        
+    except Exception as e:
+        log.error(f"Gagal load initial state: {e}")
 
 # ─── Eve.json Tail Task ───────────────────────────────────────────────────────
 async def tail_eve():
@@ -219,6 +293,7 @@ async def tail_eve():
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    load_initial_blocked()
     task = asyncio.create_task(tail_eve())
     yield
     task.cancel()
@@ -289,7 +364,13 @@ async def unblock_ip(ip: str, _=Depends(verify_token)):
             ["ufw", "delete", "deny", "from", ip, "to", "any"],
             capture_output=True, text=True
         )
+        
+        # Update memory
         blocked_ips = [b for b in blocked_ips if b["ip"] != ip]
+        
+        # Update persistence state (sinkron ke auto_block)
+        update_state_unblock(ip)
+        
         await broadcast({"type": "unblocked", "ip": ip})
         return {"status": "ok", "ip": ip, "ufw_output": result.stdout.strip()}
     except Exception as e:
