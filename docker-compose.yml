@@ -20,6 +20,7 @@ services:
     image: jasonish/evebox:latest
     container_name: evebox_ui
     restart: on-failure
+    user: "root"
     ports:
       - "5636:5636"
     volumes:
