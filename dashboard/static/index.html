@@ -697,7 +697,7 @@
                         <div class="field">
                             <label>Webhook URL</label>
                             <input id="wh-url" type="url"
-                                placeholder="https://hooks.slack.com/... atau Telegram/Discord" />
+                                placeholder="https://discord.com/api/webhooks/... atau Slack/Telegram" />
                         </div>
                         <div class="field">
                             <label>Custom Headers (JSON, opsional)</label>
@@ -755,6 +755,7 @@
         // ── State ──────────────────────────────────
         let feedCount = 0;
         let ws = null;
+        let authToken = '';
 
         // ── Toast ──────────────────────────────────
         function toast(msg, type = 'success') {
@@ -948,10 +949,19 @@
         }
 
         // ── Webhook ───────────────────────────────
+        function getAuthHeaders(extra = {}) {
+            const h = { 'Content-Type': 'application/json', ...extra };
+            if (authToken) h['X-Token'] = authToken;
+            return h;
+        }
+
         async function testWebhook() {
             try {
-                const r = await fetch('/api/webhook/test', { method: 'POST' });
-                const j = await r.json();
+                const r = await fetch('/api/webhook/test', {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                if (r.status === 403) { toast('❌ Token salah / tidak diset', 'error'); return; }
                 toast('🧪 Test webhook terkirim!');
                 refreshWebhookLog();
             } catch (e) { toast('❌ Gagal kirim test', 'error'); }
@@ -966,18 +976,20 @@
                 catch (e) { toast('❌ Headers bukan JSON valid', 'error'); return; }
             }
             try {
-                await fetch('/api/settings', {
+                const r = await fetch('/api/settings', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({ webhook_url: url, webhook_headers: headers })
                 });
+                if (r.status === 403) { toast('❌ Token salah / tidak diset', 'error'); return; }
                 toast('✅ Webhook disimpan');
             } catch (e) { toast('❌ Gagal simpan', 'error'); }
         }
 
         async function refreshWebhookLog() {
             try {
-                const r = await fetch('/api/webhook/log');
+                const r = await fetch('/api/webhook/log', { headers: getAuthHeaders() });
+                if (!r.ok) return; // 403 jika token salah, diam saja
                 const logs = await r.json();
                 const el = document.getElementById('webhook-log-list');
                 if (!logs.length) {
@@ -991,6 +1003,7 @@
         </span>
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${escHtml(l.url)}</span>
         <span class="wh-ts">${l.timestamp}</span>
+        ${l.error ? `<span style="color:var(--danger);font-size:.7rem" title="${escHtml(l.error)}">⚠</span>` : ''}
       </div>`).join('');
             } catch (e) { }
         }
@@ -998,28 +1011,35 @@
         // ── Settings ──────────────────────────────
         async function loadSettings() {
             try {
-                const r = await fetch('/api/settings');
+                const r = await fetch('/api/settings', { headers: getAuthHeaders() });
                 if (!r.ok) return;
                 const s = await r.json();
                 if (s.webhook_url) document.getElementById('wh-url').value = s.webhook_url;
-                if (s.threshold) document.getElementById('set-threshold').value = s.threshold;
-                if (s.severity) document.getElementById('set-severity').value = s.severity;
+                if (s.threshold)   document.getElementById('set-threshold').value = s.threshold;
+                if (s.severity)    document.getElementById('set-severity').value = s.severity;
             } catch (e) { }
         }
 
         async function saveSettings() {
+            const tokenInput = document.getElementById('set-token').value;
+            // Update local authToken jika user isi token baru
+            if (tokenInput && tokenInput !== '••••••••') {
+                authToken = tokenInput;
+            }
             const payload = {
-                threshold: parseInt(document.getElementById('set-threshold').value),
-                severity: parseInt(document.getElementById('set-severity').value),
-                secret_token: document.getElementById('set-token').value,
+                threshold:    parseInt(document.getElementById('set-threshold').value),
+                severity:     parseInt(document.getElementById('set-severity').value),
+                secret_token: tokenInput,
             };
             try {
-                await fetch('/api/settings', {
+                const r = await fetch('/api/settings', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify(payload)
                 });
+                if (r.status === 403) { toast('❌ Token salah', 'error'); return; }
                 toast('✅ Pengaturan disimpan');
+                loadSettings(); // Reload untuk konfirmasi
             } catch (e) { toast('❌ Gagal simpan', 'error'); }
         }
 

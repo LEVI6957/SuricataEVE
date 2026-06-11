@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
 auto_block.py — Auto Firewall Blocking berbasis Suricata eve.json
-Membaca log Suricata real-time, memblok IP via UFW, dan
-mengirim event ke dashboard via HTTP internal.
+Membaca log Suricata real-time, memblok IP via iptables (custom chain),
+dan mengirim event ke dashboard via HTTP internal.
+
+Cara kerja:
+  1. Buat chain SURICATA_BLOCK di iptables (jika belum ada)
+  2. Hubungkan chain ke INPUT & FORWARD
+  3. Baca eve.json Suricata secara real-time (tail)
+  4. Jika IP mencapai threshold alert → DROP via iptables
 
 Author: Levi (github.com/LEVI6957)
 """
 
-import asyncio
 import json
 import logging
 import os
@@ -24,11 +29,13 @@ import httpx
 # ─── Config ───────────────────────────────────────────────────────────────────
 EVE_LOG_PATH    = os.getenv("EVE_LOG_PATH",    "/var/log/suricata/eve.json")
 BLOCK_THRESHOLD = int(os.getenv("BLOCK_THRESHOLD", "3"))
-CHECK_INTERVAL  = int(os.getenv("CHECK_INTERVAL",  "10"))
 ALERT_SEVERITY  = int(os.getenv("ALERT_SEVERITY",  "2"))
 DASHBOARD_URL   = os.getenv("DASHBOARD_URL",   "http://127.0.0.1:8080")
 BLOCKED_LOG     = "/app/blocked_ips.log"
 STATE_FILE      = "/app/alert_counts.json"
+
+# Nama custom chain iptables khusus Suricata
+IPTABLES_CHAIN  = "SURICATA_BLOCK"
 
 # IP statis yang tidak boleh diblok
 WHITELIST_IPS = {"127.0.0.1", "::1", "0.0.0.0"}
@@ -63,51 +70,34 @@ blocked_ips:  set  = set()
 running = True
 last_state_mtime = 0
 
+
 def load_state():
     """Load alert_counts dan blocked_ips dari file (bertahan saat restart)."""
     global alert_counts, blocked_ips, last_state_mtime
-    if os.path.exists(STATE_FILE):
-        try:
-            mtime = os.path.getmtime(STATE_FILE)
-            if mtime == last_state_mtime:
-                return # Tidak ada perubahan
+    if not os.path.exists(STATE_FILE):
+        return
+    try:
+        mtime = os.path.getmtime(STATE_FILE)
+        if mtime == last_state_mtime:
+            return  # Tidak ada perubahan
 
-            with open(STATE_FILE, "r") as f:
-                data = json.load(f)
-            
-            # Update in-memory state
-            # Perhatian: kita replace total agar sinkron dengan dashboard
-            # Tapi warning: alert_counts memory mungkin punya data baru yang belum di-save?
-            # Idealnya merge, tapi untuk simpel, kita percaya disk jika unblock terjadi.
-            # Namun, app.py hanya ubah saat unblock. auto_block ubah saat nambah count.
-            # Race condition mungkin terjadi, tapi UFW unblock > counter increment.
-            
-            disk_counts = data.get("alert_counts", {})
-            disk_blocked = set(data.get("blocked_ips", []))
-            
-            # Merge logic:
-            # Jika IP ada di disk_blocked, masukkan ke blocked_ips (prioritas disk)
-            # Jika IP TIDAK ada di disk_blocked, hapus dari blocked_ips (dashboard unblock)
-            blocked_ips = disk_blocked 
-            
-            # Untuk counts, jika dashboard reset (hapus key), kita ikut reset
-            # Jika key ada di disk, kita pakai nilai disk (mungkin di-reset jadi 0)
-            # Tapi kita pertahankan count memory untuk IP lain yang aktif
-            for ip, count in disk_counts.items():
-                alert_counts[ip] = count
-                
-            # Hapus count jika di disk eksplisit tidak ada tapi di memory ada? 
-            # App.py saat unblock akan menghapus key dari alert_counts di disk.
-            # Jadi kita harus iterasi memory dan hapus yang tidak ada di disk?
-            # Tidak, karena auto_block mungkin baru saja nambah counter memory yang belum di-save.
-            # SOLUSI: App.py set count = 0 di disk, BUKAN hapus key.
-            # Auto block baca count 0 -> update memory jadi 0.
-            
-            last_state_mtime = mtime
-            log.info(f"State reload dari disk: {len(blocked_ips)} IP diblok")
-            
-        except Exception as e:
-            log.warning(f"Gagal load state: {e}")
+        with open(STATE_FILE, "r") as f:
+            data = json.load(f)
+
+        disk_counts  = data.get("alert_counts", {})
+        disk_blocked = set(data.get("blocked_ips", []))
+
+        # Prioritas disk: jika dashboard unblock → hapus dari memory
+        blocked_ips = disk_blocked
+
+        for ip, count in disk_counts.items():
+            alert_counts[ip] = count
+
+        last_state_mtime = mtime
+        log.info(f"State reload dari disk: {len(blocked_ips)} IP diblok")
+
+    except Exception as e:
+        log.warning(f"Gagal load state: {e}")
 
 
 def save_state():
@@ -142,124 +132,226 @@ def notify_dashboard(payload: dict):
         pass  # Dashboard mungkin belum ready, tidak perlu fatal
 
 
-# ─── UFW Blocking ────────────────────────────────────────────────────────────
-def is_ufw_available() -> bool:
-    return subprocess.run(["which", "ufw"], capture_output=True).returncode == 0
+# ─── iptables Manager ─────────────────────────────────────────────────────────
+def run_ipt(args: list, check: bool = False) -> subprocess.CompletedProcess:
+    """Jalankan perintah iptables."""
+    return subprocess.run(
+        ["iptables"] + args,
+        capture_output=True,
+        text=True,
+        check=check,
+    )
+
+
+def is_iptables_available() -> bool:
+    """Cek apakah iptables tersedia di sistem."""
+    result = subprocess.run(["which", "iptables"], capture_output=True)
+    return result.returncode == 0
+
+
+def setup_chain():
+    """
+    Buat custom chain SURICATA_BLOCK jika belum ada,
+    lalu hubungkan ke INPUT dan FORWARD.
+    """
+    # Cek apakah chain sudah ada
+    check = run_ipt(["-n", "-L", IPTABLES_CHAIN])
+    if check.returncode != 0:
+        # Buat chain baru
+        run_ipt(["-N", IPTABLES_CHAIN])
+        log.info(f"Chain {IPTABLES_CHAIN} berhasil dibuat")
+    else:
+        log.info(f"Chain {IPTABLES_CHAIN} sudah ada")
+
+    # Pastikan chain terhubung ke INPUT (hindari duplikat)
+    for hook in ["INPUT", "FORWARD"]:
+        check_jump = run_ipt(["-C", hook, "-j", IPTABLES_CHAIN])
+        if check_jump.returncode != 0:
+            run_ipt(["-I", hook, "1", "-j", IPTABLES_CHAIN])
+            log.info(f"Chain {IPTABLES_CHAIN} dihubungkan ke {hook}")
+
+
+def is_ip_blocked_in_iptables(ip: str) -> bool:
+    """Cek apakah IP sudah ada di chain SURICATA_BLOCK."""
+    result = run_ipt(["-C", IPTABLES_CHAIN, "-s", ip, "-j", "DROP"])
+    return result.returncode == 0
 
 
 def block_ip(ip: str, signature: str, count: int) -> bool:
+    """Tambahkan rule DROP untuk IP di chain SURICATA_BLOCK."""
     if ip in blocked_ips or is_whitelisted(ip):
         return False
 
-    try:
-        check = subprocess.run(["ufw", "status", "numbered"], capture_output=True, text=True)
-        if ip in check.stdout:
-            blocked_ips.add(ip)
-            return False
+    # Double-check di iptables langsung (hindari duplikat rule)
+    if is_ip_blocked_in_iptables(ip):
+        blocked_ips.add(ip)
+        return False
 
-        result = subprocess.run(
-            ["ufw", "deny", "from", ip, "to", "any"],
-            capture_output=True, text=True
-        )
+    result = run_ipt(["-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"])
 
-        if result.returncode == 0:
-            blocked_ips.add(ip)
-            ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-            log.warning(f"🔒 DIBLOK: {ip} | {signature}")
+    if result.returncode == 0:
+        blocked_ips.add(ip)
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        log.warning(f"🔒 DIBLOK [iptables]: {ip} | {signature} | hit={count}")
 
+        # Tulis ke log file
+        try:
             with open(BLOCKED_LOG, "a") as f:
                 f.write(f"{ts} | BLOCKED | {ip} | {signature}\n")
+        except Exception as e:
+            log.warning(f"Gagal tulis log: {e}")
 
-            # Kirim ke dashboard
-            notify_dashboard({
-                "type":      "blocked",
-                "src_ip":    ip,
-                "signature": signature,
-                "count":     count,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
-            return True
-        else:
-            log.error(f"Gagal blok {ip}: {result.stderr.strip()}")
-            return False
-    except Exception as e:
-        log.error(f"Error memblok {ip}: {e}")
+        # Kirim notifikasi ke dashboard
+        notify_dashboard({
+            "type":      "blocked",
+            "src_ip":    ip,
+            "signature": signature,
+            "count":     count,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        return True
+    else:
+        log.error(f"Gagal blok {ip} via iptables: {result.stderr.strip()}")
         return False
+
+
+def unblock_ip(ip: str) -> bool:
+    """Hapus rule DROP untuk IP dari chain SURICATA_BLOCK."""
+    if not is_ip_blocked_in_iptables(ip):
+        blocked_ips.discard(ip)
+        return False
+
+    result = run_ipt(["-D", IPTABLES_CHAIN, "-s", ip, "-j", "DROP"])
+    if result.returncode == 0:
+        blocked_ips.discard(ip)
+        log.info(f"🔓 DIBEBASKAN [iptables]: {ip}")
+        return True
+    else:
+        log.error(f"Gagal unblock {ip}: {result.stderr.strip()}")
+        return False
+
+
+def list_blocked_iptables() -> list:
+    """Ambil daftar IP yang diblok dari chain SURICATA_BLOCK."""
+    result = run_ipt(["-n", "-L", IPTABLES_CHAIN, "--line-numbers"])
+    ips = []
+    if result.returncode == 0:
+        for line in result.stdout.splitlines():
+            # Format: num  DROP  all  --  <src_ip>  0.0.0.0/0
+            parts = line.split()
+            if len(parts) >= 5 and parts[1] == "DROP":
+                ips.append(parts[4])
+    return ips
 
 
 # ─── Tail eve.json ────────────────────────────────────────────────────────────
 def tail_eve_json(filepath: str):
+    """
+    Tail file eve.json secara real-time.
+    Tunggu hingga file ada, lalu baca baris baru terus menerus.
+    """
     while not os.path.exists(filepath):
         log.info(f"Menunggu {filepath} ...")
         time.sleep(5)
 
-    log.info(f"Membaca: {filepath}")
+    log.info(f"Membaca eve.json: {filepath}")
     with open(filepath, "r") as f:
-        f.seek(0, 2)
+        f.seek(0, 2)  # Loncat ke akhir file (tail mode)
         while running:
             line = f.readline()
             if not line:
-                time.sleep(0.3)
+                time.sleep(0.2)
                 continue
             line = line.strip()
-            line = line.strip()
-            if line:
-                # Cek apakah state file berubah (misal di-unblock dari dashboard)
-                # Lakukan check setiap 100 baris atau setiap interval waktu tertentu agar tidak berat IO
-                # Disini kita cek setiap line untuk responsivitas maksimal dengan asumsi OS cache file stat efisien
-                if os.path.exists(STATE_FILE):
+            if not line:
+                continue
+
+            # Cek apakah state file berubah (misal unblock dari dashboard)
+            if os.path.exists(STATE_FILE):
+                try:
                     if os.path.getmtime(STATE_FILE) > last_state_mtime:
                         load_state()
-                        
-                yield line
+                except OSError:
+                    pass
+
+            yield line
 
 
-# ─── Main ────────────────────────────────────────────────────────────────────
+# ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
-    log.info("=" * 55)
-    log.info("  Suricata Auto Block Service")
+    log.info("=" * 58)
+    log.info("  Suricata Auto Block Service (iptables mode)")
+    log.info(f"  Eve JSON     : {EVE_LOG_PATH}")
+    log.info(f"  Chain        : {IPTABLES_CHAIN}")
     log.info(f"  Threshold    : {BLOCK_THRESHOLD} alerts")
     log.info(f"  Min Severity : {ALERT_SEVERITY}")
     log.info(f"  Dashboard    : {DASHBOARD_URL}")
-    log.info("=" * 55)
+    log.info("=" * 58)
 
     load_state()
 
-    dry_run = not is_ufw_available()
-    if dry_run:
-        log.warning("UFW tidak ditemukan — DRY RUN mode (tidak ada blok nyata)")
-    else:
-        subprocess.run(["ufw", "--force", "enable"], capture_output=True)
+    # Cek iptables tersedia
+    if not is_iptables_available():
+        log.critical("iptables tidak ditemukan! Pastikan container punya CAP_NET_ADMIN.")
+        sys.exit(1)
 
+    # Setup chain SURICATA_BLOCK
+    try:
+        setup_chain()
+    except Exception as e:
+        log.critical(f"Gagal setup iptables chain: {e}")
+        sys.exit(1)
+
+    # Sync blocked IPs dari state file ke iptables (jika ada dari session sebelumnya)
+    if blocked_ips:
+        log.info(f"Re-applying {len(blocked_ips)} IP dari state sebelumnya ke iptables...")
+        for ip in list(blocked_ips):
+            if not is_ip_blocked_in_iptables(ip):
+                run_ipt(["-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"])
+                log.info(f"  Re-blocked: {ip}")
+
+    log.info("Mulai membaca Suricata eve.json...")
+
+    # ─── Main loop: baca event dari eve.json ──────────────────────────────────
     for line in tail_eve_json(EVE_LOG_PATH):
         if not running:
             break
+
+        # Parse JSON
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
 
+        # Hanya proses event tipe "alert"
         if event.get("event_type") != "alert":
             continue
 
-        severity  = event.get("alert", {}).get("severity", 99)
+        alert     = event.get("alert", {})
+        severity  = alert.get("severity", 99)
         src_ip    = event.get("src_ip", "")
-        signature = event.get("alert", {}).get("signature", "N/A")
+        signature = alert.get("signature", "N/A")
+        category  = alert.get("category", "")
 
+        # Filter: skip jika severity rendah, IP kosong, atau whitelisted
         if severity > ALERT_SEVERITY or not src_ip or is_whitelisted(src_ip):
             continue
 
+        # Tambah counter
         alert_counts[src_ip] += 1
         count = alert_counts[src_ip]
 
-        log.info(f"⚠  [{severity}] {src_ip} | hit {count}/{BLOCK_THRESHOLD} | {signature}")
+        log.info(
+            f"⚠  [sev={severity}] {src_ip} | "
+            f"hit {count}/{BLOCK_THRESHOLD} | {signature}"
+        )
 
         # Kirim alert ke dashboard
         notify_dashboard({
             "type":      "alert",
             "src_ip":    src_ip,
             "signature": signature,
-            "category":  event.get("alert", {}).get("category", ""),
+            "category":  category,
             "severity":  severity,
             "count":     count,
             "threshold": BLOCK_THRESHOLD,
@@ -268,13 +360,12 @@ def main():
 
         # Blok jika threshold tercapai
         if count >= BLOCK_THRESHOLD and src_ip not in blocked_ips:
-            if dry_run:
-                log.warning(f"[DRY-RUN] Blok: {src_ip}")
-                blocked_ips.add(src_ip)
-            else:
-                block_ip(src_ip, signature, count)
+            blocked = block_ip(src_ip, signature, count)
+            if blocked:
+                save_state()
 
-    log.info("Auto block selesai.")
+    log.info("Auto block selesai. Membersihkan...")
+    save_state()
 
 
 if __name__ == "__main__":

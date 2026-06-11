@@ -38,18 +38,16 @@ services:
     restart: unless-stopped
     network_mode: "host"
     cap_add:
-      - NET_ADMIN
-    privileged: true
+      - NET_ADMIN      # Diperlukan untuk iptables
+      - NET_RAW
+    privileged: true   # Diperlukan agar bisa akses iptables host
     volumes:
-      - ./logs:/var/log/suricata:ro
-      - /etc/ufw:/etc/ufw
-      - /lib/ufw:/lib/ufw:ro
-      - ./auto_block/blocked_ips.log:/app/blocked_ips.log
-      - ./auto_block/alert_counts.json:/app/alert_counts.json
+      - ./logs:/var/log/suricata:ro                          # Baca eve.json
+      - ./auto_block/blocked_ips.log:/app/blocked_ips.log   # Log IP diblok
+      - ./auto_block/alert_counts.json:/app/alert_counts.json # Sync state
     environment:
       - EVE_LOG_PATH=/var/log/suricata/eve.json
       - BLOCK_THRESHOLD=${BLOCK_THRESHOLD:-3}
-      - CHECK_INTERVAL=${CHECK_INTERVAL:-10}
       - ALERT_SEVERITY=${ALERT_SEVERITY:-2}
       - DASHBOARD_URL=http://127.0.0.1:${DASHBOARD_PORT:-8080}
     depends_on:
@@ -66,12 +64,10 @@ services:
       - NET_ADMIN
     privileged: true
     volumes:
-      - ./logs:/var/log/suricata:ro # Baca eve.json
-      - ./auto_block/blocked_ips.log:/app/blocked_ips.log # Baca log IP diblok
+      - ./logs:/var/log/suricata:ro                          # Baca eve.json
+      - ./auto_block/blocked_ips.log:/app/blocked_ips.log   # Baca log IP diblok
       - ./auto_block/alert_counts.json:/app/alert_counts.json # Sync state
-      - ./dashboard/settings.json:/app/settings.json # Persistent settings
-      - /etc/ufw:/etc/ufw # Akses UFW host
-      - /lib/ufw:/lib/ufw:ro # Akses lib UFW host
+      - ./dashboard/settings.json:/app/settings.json         # Persistent settings
     environment:
       - EVE_LOG_PATH=/var/log/suricata/eve.json
       - BLOCKED_LOG=/app/blocked_ips.log

@@ -22,7 +22,7 @@ from fastapi import (
     FastAPI, WebSocket, WebSocketDisconnect,
     HTTPException, Request, Header, Depends
 )
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -31,6 +31,7 @@ EVE_LOG_PATH  = os.getenv("EVE_LOG_PATH",  "/var/log/suricata/eve.json")
 BLOCKED_LOG   = os.getenv("BLOCKED_LOG",   "/app/blocked_ips.log")
 ALERT_COUNTS  = os.getenv("ALERT_COUNTS",  "/app/alert_counts.json")
 SETTINGS_FILE = "/app/settings.json"
+IPTABLES_CHAIN = "SURICATA_BLOCK"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,15 +40,15 @@ logging.basicConfig(
 log = logging.getLogger("dashboard")
 
 # ─── In-memory State ──────────────────────────────────────────────────────────
-recent_alerts: deque = deque(maxlen=200)     # buffer 200 alert terbaru
-blocked_ips: list[dict] = []                  # [{ip, timestamp, signature, count}]
+recent_alerts: deque = deque(maxlen=200)
+blocked_ips: list[dict] = []
 alert_counts: dict = defaultdict(int)
 stats = {"total_alerts": 0, "total_blocked": 0, "start_time": time.time()}
 ws_clients: list[WebSocket] = []
-webhook_log: deque = deque(maxlen=50)         # log 50 pengiriman webhook terakhir
+webhook_log: deque = deque(maxlen=50)
 
 
-# ─── Settings Helper ─────────────────────────────────────────────────────────
+# ─── Settings Helper ──────────────────────────────────────────────────────────
 def load_settings() -> dict:
     try:
         with open(SETTINGS_FILE, "r") as f:
@@ -68,7 +69,7 @@ def save_settings(data: dict):
         json.dump(data, f, indent=2)
 
 
-# ─── WebSocket Broadcaster ───────────────────────────────────────────────────
+# ─── WebSocket Broadcaster ────────────────────────────────────────────────────
 async def broadcast(event: dict):
     """Kirim event ke semua WebSocket client yang terhubung."""
     dead = []
@@ -83,6 +84,49 @@ async def broadcast(event: dict):
 
 
 # ─── Webhook Engine ───────────────────────────────────────────────────────────
+def _format_discord_payload(payload: dict) -> dict:
+    """Format payload khusus untuk Discord webhook."""
+    event = payload.get("event", "EVENT")
+    ip    = payload.get("ip", "N/A")
+    sig   = payload.get("signature", "N/A")
+    sev   = payload.get("severity", "N/A")
+    ts    = payload.get("timestamp", "")
+
+    # Pilih warna berdasarkan event type
+    color = {
+        "BLOCKED":    0xEF4444,   # merah
+        "HIGH_ALERT": 0xF59E0B,   # kuning
+        "TEST":       0x6366F1,   # ungu
+    }.get(event, 0x64748B)
+
+    title_icon = {
+        "BLOCKED":    "🔒 IP Diblok",
+        "HIGH_ALERT": "⚠️ High Alert",
+        "TEST":       "🧪 Test Webhook",
+    }.get(event, f"📡 {event}")
+
+    embed = {
+        "title": title_icon,
+        "color": color,
+        "timestamp": ts if ts else datetime.now(timezone.utc).isoformat(),
+        "footer": {"text": "Suricata Auto Block Dashboard"},
+        "fields": [],
+    }
+
+    if ip and ip != "N/A":
+        embed["fields"].append({"name": "IP Penyerang", "value": f"`{ip}`", "inline": True})
+    if sig and sig != "N/A":
+        embed["fields"].append({"name": "Signature", "value": sig[:256], "inline": False})
+    if sev and sev != "N/A":
+        embed["fields"].append({"name": "Severity", "value": str(sev), "inline": True})
+    if payload.get("hit_count"):
+        embed["fields"].append({"name": "Hit Count", "value": str(payload["hit_count"]), "inline": True})
+    if payload.get("message"):
+        embed["fields"].append({"name": "Info", "value": payload["message"], "inline": False})
+
+    return {"embeds": [embed]}
+
+
 async def send_webhook(payload: dict):
     """Kirim notifikasi ke webhook URL yang dikonfigurasi (retry 3x)."""
     settings = load_settings()
@@ -93,19 +137,37 @@ async def send_webhook(payload: dict):
     headers = {"Content-Type": "application/json"}
     headers.update(settings.get("webhook_headers", {}))
 
+    # ── Deteksi platform & format payload ──────────────────────────────────────
+    is_discord = "discord.com/api/webhooks" in url or "discordapp.com" in url
+    is_slack   = "hooks.slack.com" in url
+
+    if is_discord:
+        body = _format_discord_payload(payload)
+    elif is_slack:
+        # Slack incoming webhook format
+        event = payload.get("event", "EVENT")
+        ip    = payload.get("ip", "N/A")
+        sig   = payload.get("signature", "")
+        body  = {
+            "text": f"*{event}* — IP: `{ip}`\n>{sig}"
+        }
+    else:
+        # Generic JSON — Telegram, custom endpoint, dll
+        body = payload
+
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     result_entry = {"timestamp": ts, "url": url, "status": None, "error": None}
 
     for attempt in range(1, 4):
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.post(url, json=payload, headers=headers)
+                r = await client.post(url, json=body, headers=headers)
                 result_entry["status"] = r.status_code
                 if r.status_code < 400:
                     log.info(f"Webhook OK [{r.status_code}]: {url}")
                     break
                 else:
-                    log.warning(f"Webhook gagal [{r.status_code}] attempt {attempt}")
+                    log.warning(f"Webhook gagal [{r.status_code}] attempt {attempt}: {r.text[:200]}")
         except Exception as e:
             result_entry["error"] = str(e)
             log.error(f"Webhook error attempt {attempt}: {e}")
@@ -114,8 +176,17 @@ async def send_webhook(payload: dict):
     webhook_log.appendleft(result_entry)
 
 
-# ─── State Sync Helper ──────────────────────────────────────────────────────
-# Sinkronisasi dengan auto_block.py lewat file JSON
+# ─── iptables Helpers (untuk unblock dari dashboard) ─────────────────────────
+def _ipt_unblock(ip: str) -> tuple[bool, str]:
+    """Hapus rule iptables untuk IP dari chain SURICATA_BLOCK."""
+    result = subprocess.run(
+        ["iptables", "-D", IPTABLES_CHAIN, "-s", ip, "-j", "DROP"],
+        capture_output=True, text=True
+    )
+    return result.returncode == 0, result.stderr.strip()
+
+
+# ─── State Sync Helper ────────────────────────────────────────────────────────
 def update_state_unblock(ip: str):
     """Hapus IP dari alert_counts.json dan reset counter-nya."""
     if not os.path.exists(ALERT_COUNTS):
@@ -123,23 +194,20 @@ def update_state_unblock(ip: str):
     try:
         with open(ALERT_COUNTS, "r") as f:
             data = json.load(f)
-        
-        # Hapus dari blocked_ips
+
         current_blocked = set(data.get("blocked_ips", []))
-        if ip in current_blocked:
-            current_blocked.remove(ip)
-            data["blocked_ips"] = list(current_blocked)
-        
-        # Reset counter jadi 0 (agar tidak langsung diblok lagi)
-        counts = data.get("alert_counts", {})
-        if ip in counts:
-            counts[ip] = 0
-            data["alert_counts"] = counts
-            
+        current_blocked.discard(ip)
+        data["blocked_ips"] = list(current_blocked)
+
+        # Reset counter jadi 0 agar tidak langsung diblok lagi
+        if ip in data.get("alert_counts", {}):
+            data["alert_counts"][ip] = 0
+
         with open(ALERT_COUNTS, "w") as f:
             json.dump(data, f)
     except Exception as e:
         log.error(f"Gagal update state unblock: {e}")
+
 
 def load_initial_blocked():
     """Load blocked IPs dari state file + metadata dari log."""
@@ -148,62 +216,61 @@ def load_initial_blocked():
         return
 
     try:
-        # Load JSON
         with open(ALERT_COUNTS, "r") as f:
             data = json.load(f)
-            
-        # 1. Restore counters (untuk Top Attackers stats)
+
         saved_counts = data.get("alert_counts", {})
         for k, v in saved_counts.items():
             alert_counts[k] = v
 
-        # 2. Restore Blocked List
         blocked_set = set(data.get("blocked_ips", []))
         if not blocked_set:
             return
 
-        # 3. Cari metadata (signature, timestamp) dari log file
+        # Cari metadata dari log file
         meta_map = {}
         if os.path.exists(BLOCKED_LOG):
             with open(BLOCKED_LOG, "r") as f:
-                lines = f.readlines()
-                for line in reversed(lines):
-                    # Format: YYYY-MM-DD HH:MM:SS UTC | BLOCKED | IP | Signature
+                for line in reversed(f.readlines()):
                     parts = line.strip().split(" | ")
                     if len(parts) >= 4 and parts[1] == "BLOCKED":
                         ts, _, ip, sig = parts[0], parts[1], parts[2], parts[3]
                         if ip in blocked_set and ip not in meta_map:
                             meta_map[ip] = {"ts": ts, "sig": sig}
-        
-        # 4. Gabungkan (gunakan count dari state)
+
         new_list = []
         for ip in blocked_set:
             meta = meta_map.get(ip, {"ts": "Unknown", "sig": "Unknown"})
             new_list.append({
-                "ip": ip,
+                "ip":        ip,
                 "timestamp": meta["ts"],
                 "signature": meta["sig"],
-                "count": alert_counts.get(ip, 0)
+                "count":     alert_counts.get(ip, 0),
             })
-        
+
         blocked_ips = new_list
+        stats["total_blocked"] = len(blocked_ips)
         log.info(f"Loaded {len(blocked_ips)} blocked IPs from state.")
-        
+
     except Exception as e:
         log.error(f"Gagal load initial state: {e}")
 
+
 # ─── Eve.json Tail Task ───────────────────────────────────────────────────────
 async def tail_eve():
-    """Background task: tail eve.json dan broadcast event ke WebSocket."""
+    """
+    Background task: tail eve.json dan tampilkan alert di dashboard.
+    CATATAN: Blocking iptables dilakukan oleh auto_block.py, bukan di sini.
+             Dashboard hanya membaca untuk tampilan Live Feed.
+    """
     while not os.path.exists(EVE_LOG_PATH):
         log.info(f"Menunggu {EVE_LOG_PATH} ...")
         await asyncio.sleep(5)
 
     log.info(f"Mulai membaca {EVE_LOG_PATH}")
-    settings = load_settings()
 
     async with aiofiles.open(EVE_LOG_PATH, "r") as f:
-        await f.seek(0, 2)  # Skip ke akhir file
+        await f.seek(0, 2)  # Loncat ke akhir file
         while True:
             line = await f.readline()
             if not line:
@@ -222,16 +289,17 @@ async def tail_eve():
             if event.get("event_type") != "alert":
                 continue
 
-            settings = load_settings()
-            severity   = event.get("alert", {}).get("severity", 99)
-            src_ip     = event.get("src_ip", "")
-            signature  = event.get("alert", {}).get("signature", "N/A")
-            category   = event.get("alert", {}).get("category", "N/A")
-            ts         = event.get("timestamp", datetime.now(timezone.utc).isoformat())
+            settings  = load_settings()
+            severity  = event.get("alert", {}).get("severity", 99)
+            src_ip    = event.get("src_ip", "")
+            signature = event.get("alert", {}).get("signature", "N/A")
+            category  = event.get("alert", {}).get("category", "N/A")
+            ts        = event.get("timestamp", datetime.now(timezone.utc).isoformat())
 
             if severity > settings.get("severity", 2):
                 continue
 
+            # Update stats & alert counts (1 sumber: tail_eve saja, bukan internal_event)
             stats["total_alerts"] += 1
             alert_counts[src_ip] += 1
             count = alert_counts[src_ip]
@@ -248,51 +316,19 @@ async def tail_eve():
             }
             recent_alerts.appendleft(alert_payload)
 
-            # Broadcast ke UI
+            # Broadcast ke UI (live feed)
             await broadcast(alert_payload)
 
-            # Auto-block jika mencapai threshold
-            threshold = settings.get("threshold", 3)
-            if count >= threshold and not any(b["ip"] == src_ip for b in blocked_ips):
-                blocked_entry = {
-                    "ip":        src_ip,
-                    "timestamp": ts,
-                    "signature": signature,
-                    "count":     count,
-                }
-                blocked_ips.insert(0, blocked_entry)
-                stats["total_blocked"] += 1
-
-                block_payload = {**alert_payload, "type": "blocked"}
-                await broadcast(block_payload)
-
-                # Kirim webhook
+            # Kirim webhook untuk high-severity pertama kali
+            if severity == 1 and count == 1:
                 await send_webhook({
-                    "event":     "BLOCKED",
+                    "event":     "HIGH_ALERT",
                     "ip":        src_ip,
                     "signature": signature,
                     "category":  category,
                     "severity":  severity,
-                    "hit_count": count,
                     "timestamp": ts,
                 })
-
-                # Tulis log
-                with open(BLOCKED_LOG, "a") as blf:
-                    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-                    blf.write(f"{now} | BLOCKED | {src_ip} | {signature}\n")
-
-            elif count == 1:
-                # Kirim webhook untuk alert pertama (high severity)
-                if severity == 1:
-                    await send_webhook({
-                        "event":     "HIGH_ALERT",
-                        "ip":        src_ip,
-                        "signature": signature,
-                        "category":  category,
-                        "severity":  severity,
-                        "timestamp": ts,
-                    })
 
 
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
@@ -349,7 +385,7 @@ async def get_stats():
         "total_blocked": stats["total_blocked"],
         "active_clients": len(ws_clients),
         "uptime_seconds": uptime_sec,
-        "top_attackers":  sorted(
+        "top_attackers": sorted(
             [{"ip": k, "count": v} for k, v in alert_counts.items()],
             key=lambda x: x["count"], reverse=True
         )[:10],
@@ -362,24 +398,29 @@ async def get_blocked():
 
 
 @app.post("/api/unblock/{ip}")
-async def unblock_ip(ip: str, _=Depends(verify_token)):
+async def unblock_ip_endpoint(ip: str, _=Depends(verify_token)):
+    """
+    Unblock IP: hapus dari iptables SURICATA_BLOCK chain,
+    update memory state, dan sync ke auto_block via file.
+    """
     global blocked_ips
-    try:
-        result = subprocess.run(
-            ["ufw", "delete", "deny", "from", ip, "to", "any"],
-            capture_output=True, text=True
-        )
-        
-        # Update memory
-        blocked_ips = [b for b in blocked_ips if b["ip"] != ip]
-        
-        # Update persistence state (sinkron ke auto_block)
-        update_state_unblock(ip)
-        
-        await broadcast({"type": "unblocked", "ip": ip})
-        return {"status": "ok", "ip": ip, "ufw_output": result.stdout.strip()}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+    # Hapus dari iptables
+    ok, err = _ipt_unblock(ip)
+    if not ok:
+        log.warning(f"iptables unblock {ip} mungkin tidak ada: {err}")
+        # Tetap lanjutkan cleanup state meskipun rule tidak ditemukan
+
+    # Update memory
+    blocked_ips = [b for b in blocked_ips if b["ip"] != ip]
+    stats["total_blocked"] = len(blocked_ips)
+
+    # Sync ke auto_block.py via state file
+    update_state_unblock(ip)
+
+    await broadcast({"type": "unblocked", "ip": ip})
+    log.info(f"🔓 Unblocked: {ip}")
+    return {"status": "ok", "ip": ip, "iptables_ok": ok}
 
 
 @app.get("/api/alerts")
@@ -390,7 +431,6 @@ async def get_alerts(limit: int = 100):
 @app.get("/api/settings")
 async def get_settings(_=Depends(verify_token)):
     s = load_settings()
-    # Jangan expose secret_token ke UI secara penuh
     if s.get("secret_token"):
         s["secret_token"] = "••••••••"
     return s
@@ -423,11 +463,12 @@ async def update_settings(body: SettingsUpdate, _=Depends(verify_token)):
 async def test_webhook(_=Depends(verify_token)):
     payload = {
         "event":     "TEST",
-        "message":   "Webhook test dari Suricata Dashboard",
+        "message":   "Test webhook dari Suricata Auto Block Dashboard",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     await send_webhook(payload)
-    return {"status": "sent", "log": list(webhook_log)[:1]}
+    logs = list(webhook_log)
+    return {"status": "sent", "log": logs[:1]}
 
 
 @app.get("/api/webhook/log")
@@ -438,20 +479,53 @@ async def get_webhook_log(_=Depends(verify_token)):
 # ─── Internal endpoint (dipanggil oleh auto_block.py) ────────────────────────
 @app.post("/internal/event")
 async def internal_event(request: Request):
-    """Endpoint internal untuk menerima event dari auto_block.py."""
+    """
+    Endpoint internal untuk menerima event dari auto_block.py.
+    - type="blocked": update blocked_ips, kirim webhook, broadcast UI
+    - type="alert": DIABAIKAN (tail_eve() sudah menangani dari eve.json langsung)
+    """
     try:
         data = await request.json()
         event_type = data.get("type", "alert")
+
         if event_type == "blocked":
-            blocked_ips.insert(0, {
-                "ip":        data.get("ip"),
-                "timestamp": data.get("timestamp"),
-                "signature": data.get("signature"),
-                "count":     data.get("count", 0),
-            })
-            stats["total_blocked"] += 1
-        stats["total_alerts"] += 1
-        await broadcast(data)
+            src_ip    = data.get("src_ip", "")   # FIX: "src_ip" bukan "ip"
+            signature = data.get("signature", "N/A")
+            count     = data.get("count", 0)
+            ts        = data.get("timestamp", datetime.now(timezone.utc).isoformat())
+
+            # Hindari duplikat
+            if src_ip and not any(b["ip"] == src_ip for b in blocked_ips):
+                blocked_ips.insert(0, {
+                    "ip":        src_ip,
+                    "timestamp": ts,
+                    "signature": signature,
+                    "count":     count,
+                })
+                stats["total_blocked"] += 1
+
+                # Broadcast ke UI
+                await broadcast({
+                    "type":      "blocked",
+                    "src_ip":    src_ip,
+                    "signature": signature,
+                    "count":     count,
+                    "timestamp": ts,
+                })
+
+                # Kirim webhook notifikasi
+                await send_webhook({
+                    "event":     "BLOCKED",
+                    "ip":        src_ip,
+                    "signature": signature,
+                    "severity":  data.get("severity"),
+                    "hit_count": count,
+                    "timestamp": ts,
+                })
+
+        # type="alert" → tidak perlu diproses, tail_eve() sudah menangani
+
         return {"status": "ok"}
     except Exception as e:
+        log.error(f"internal_event error: {e}")
         return {"status": "error", "detail": str(e)}
