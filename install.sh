@@ -127,29 +127,8 @@ fi
 header "3. Setup Project"
 # ══════════════════════════════════════════════════════════════════════════════
 
-INSTALL_DIR="/opt/suricata-dashboard"
-
-if [[ -d "$INSTALL_DIR" ]]; then
-    warn "Direktori ${INSTALL_DIR} sudah ada."
-    read -rp "$(echo -e "${BOLD}Update dari git? [Y/n]: ${NC}")" DO_PULL
-    if [[ "${DO_PULL,,}" != "n" ]]; then
-        cd "$INSTALL_DIR"
-        git fetch origin
-        git reset --hard origin/main
-        success "Repository diupdate"
-    fi
-else
-    info "Menyalin project ke ${INSTALL_DIR}..."
-    # Jika script dijalankan dari dalam repo
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    if [[ -f "${SCRIPT_DIR}/docker-compose.yml" ]]; then
-        cp -r "$SCRIPT_DIR" "$INSTALL_DIR"
-        success "Project disalin ke ${INSTALL_DIR}"
-    else
-        error "docker-compose.yml tidak ditemukan di ${SCRIPT_DIR}. Taruh install.sh di root project."
-    fi
-fi
-
+INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+info "Project akan diinstall dan dijalankan langsung dari direktori ini: ${INSTALL_DIR}"
 cd "$INSTALL_DIR"
 
 # Buat folder logs dan file-file yang dibutuhkan oleh volume mount
