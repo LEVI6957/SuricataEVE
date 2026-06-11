@@ -46,6 +46,7 @@ services:
       - ./logs:/var/log/suricata:ro                          # Baca eve.json
       - ./auto_block/blocked_ips.log:/app/blocked_ips.log   # Log IP diblok
       - ./auto_block/alert_counts.json:/app/alert_counts.json # Sync state
+      - ./dashboard/settings.json:/app/settings.json         # Baca setting dashboard
     environment:
       - EVE_LOG_PATH=/var/log/suricata/eve.json
       - BLOCK_THRESHOLD=${BLOCK_THRESHOLD:-3}

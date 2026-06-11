@@ -62,6 +62,24 @@ def get_dynamic_whitelist() -> set:
             pass
     return dynamic_whitelist
 
+# ─── Dynamic Settings ─────────────────────────────────────────────────────────
+last_settings_fetch = 0
+current_threshold = int(os.getenv("BLOCK_THRESHOLD", "3"))
+current_severity = int(os.getenv("ALERT_SEVERITY", "2"))
+
+def update_dynamic_settings():
+    global current_threshold, current_severity, last_settings_fetch
+    now = time.time()
+    if now - last_settings_fetch > 5:  # Reload file maks setiap 5 detik
+        try:
+            with open("/app/settings.json", "r") as f:
+                data = json.load(f)
+                current_threshold = data.get("threshold", int(os.getenv("BLOCK_THRESHOLD", "3")))
+                current_severity = data.get("severity", int(os.getenv("ALERT_SEVERITY", "2")))
+        except Exception:
+            pass
+        last_settings_fetch = now
+
 # Subnet private yang tidak boleh diblok (RFC 1918)
 PRIVATE_NETWORKS = [
     ipaddress.ip_network("10.0.0.0/8"),
@@ -373,8 +391,10 @@ def main():
         signature = alert.get("signature", "N/A")
         category  = alert.get("category", "")
 
+        update_dynamic_settings()
+
         # Filter: skip jika severity rendah, IP kosong, atau whitelisted
-        if severity > ALERT_SEVERITY or not src_ip or is_whitelisted(src_ip):
+        if severity > current_severity or not src_ip or is_whitelisted(src_ip):
             continue
 
         # Tambah counter
@@ -383,7 +403,7 @@ def main():
 
         log.info(
             f"⚠  [sev={severity}] {src_ip} | "
-            f"hit {count}/{BLOCK_THRESHOLD} | {signature}"
+            f"hit {count}/{current_threshold} | {signature}"
         )
 
         # Kirim alert ke dashboard
@@ -394,12 +414,12 @@ def main():
             "category":  category,
             "severity":  severity,
             "count":     count,
-            "threshold": BLOCK_THRESHOLD,
+            "threshold": current_threshold,
             "timestamp": event.get("timestamp", datetime.now(timezone.utc).isoformat()),
         })
 
         # Blok jika threshold tercapai
-        if count >= BLOCK_THRESHOLD and src_ip not in blocked_ips:
+        if count >= current_threshold and src_ip not in blocked_ips:
             blocked = block_ip(src_ip, signature, count)
             if blocked:
                 save_state()
