@@ -96,10 +96,24 @@ if [ -d "logs" ]; then
     chmod 644 logs/eve.json 2>/dev/null || touch logs/eve.json && chmod 644 logs/eve.json
 fi
 
-# Pastikan file whitelist ada agar tidak error saat di-mount
-if [[ ! -f "dashboard/whitelist.json" ]]; then
-    echo "[]" > dashboard/whitelist.json
-fi
+# Pastikan file-file yang di-mount ada sebagai file (mencegah Docker membuatnya sebagai direktori)
+for f in "dashboard/settings.json" "dashboard/whitelist.json" "auto_block/alert_counts.json" "auto_block/blocked_ips.log"; do
+    if [[ -d "$f" ]]; then
+        rm -rf "$f"
+    fi
+    if [[ ! -f "$f" ]]; then
+        mkdir -p "$(dirname "$f")"
+        if [[ "$f" == "dashboard/whitelist.json" ]]; then
+            echo "[]" > "$f"
+        elif [[ "$f" == "dashboard/settings.json" ]]; then
+            echo '{"webhook_url":"","threshold":3,"severity":2,"interval":10}' > "$f"
+        elif [[ "$f" == "auto_block/alert_counts.json" ]]; then
+            echo "{}" > "$f"
+        else
+            touch "$f"
+        fi
+    fi
+done
 
 info "Rebuilding images (with cache to speed up)..."
 docker compose build
