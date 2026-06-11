@@ -49,6 +49,7 @@ services:
       - EVE_LOG_PATH=/var/log/suricata/eve.json
       - BLOCK_THRESHOLD=${BLOCK_THRESHOLD:-3}
       - ALERT_SEVERITY=${ALERT_SEVERITY:-2}
+      - WHITELIST_IPS=${WHITELIST_IPS:-}
       - DASHBOARD_URL=http://${SERVER_IP:-127.0.0.1}:${DASHBOARD_PORT:-8080}
     depends_on:
       - suricata

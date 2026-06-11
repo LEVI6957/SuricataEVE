@@ -37,8 +37,11 @@ STATE_FILE      = "/app/alert_counts.json"
 # Nama custom chain iptables khusus Suricata
 IPTABLES_CHAIN  = "SURICATA_BLOCK"
 
-# IP statis yang tidak boleh diblok
+# IP statis yang tidak boleh diblok (baca dari .env, pisahkan dengan koma)
+env_whitelist = os.getenv("WHITELIST_IPS", "")
 WHITELIST_IPS = {"127.0.0.1", "::1", "0.0.0.0"}
+if env_whitelist:
+    WHITELIST_IPS.update([ip.strip() for ip in env_whitelist.split(",") if ip.strip()])
 
 # Subnet private yang tidak boleh diblok (RFC 1918)
 PRIVATE_NETWORKS = [
