@@ -365,7 +365,8 @@ def main():
         log.info(f"Re-applying {len(blocked_ips)} IP dari state sebelumnya ke iptables...")
         for ip in list(blocked_ips):
             if not is_ip_blocked_in_iptables(ip):
-                run_ipt(["-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"])
+                version = get_ip_version(ip)
+                run_ipt(["-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"], ip_version=version)
                 log.info(f"  Re-blocked: {ip}")
 
     log.info("Mulai membaca Suricata eve.json...")

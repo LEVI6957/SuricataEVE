@@ -6,6 +6,7 @@ Author: Levi (github.com/LEVI6957)
 """
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -186,9 +187,16 @@ async def send_webhook(payload: dict):
 
 # ─── iptables Helpers (untuk unblock dari dashboard) ─────────────────────────
 def _ipt_unblock(ip: str) -> tuple[bool, str]:
-    """Hapus rule iptables untuk IP dari chain SURICATA_BLOCK."""
+    """Hapus rule iptables/ip6tables untuk IP dari chain SURICATA_BLOCK."""
+    # Deteksi IPv4 atau IPv6
+    try:
+        version = ipaddress.ip_address(ip).version
+    except ValueError:
+        version = 4
+    
+    cmd = "iptables" if version == 4 else "ip6tables"
     result = subprocess.run(
-        ["iptables", "-D", IPTABLES_CHAIN, "-s", ip, "-j", "DROP"],
+        [cmd, "-D", IPTABLES_CHAIN, "-s", ip, "-j", "DROP"],
         capture_output=True, text=True
     )
     return result.returncode == 0, result.stderr.strip()
@@ -327,8 +335,8 @@ async def tail_eve():
             # Broadcast ke UI (live feed)
             await broadcast(alert_payload)
 
-            # Kirim webhook untuk high-severity pertama kali
-            if severity == 1 and count == 1:
+            # Kirim webhook untuk high/medium severity (1 atau 2) pertama kali
+            if severity <= 2 and count == 1:
                 await send_webhook({
                     "event":     "HIGH_ALERT",
                     "ip":        src_ip,

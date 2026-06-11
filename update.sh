@@ -77,7 +77,7 @@ for f in "dashboard/settings.json" "dashboard/whitelist.json" "auto_block/alert_
         if [[ "$f" == "dashboard/whitelist.json" ]]; then
             echo "[]" > "$f"
         elif [[ "$f" == "dashboard/settings.json" ]]; then
-            echo '{"webhook_url":"","threshold":3,"severity":2,"interval":10}' > "$f"
+            echo '{"webhook_url":"","webhook_headers":{},"threshold":3,"severity":2,"interval":10,"secret_token":""}' > "$f"
         elif [[ "$f" == "auto_block/alert_counts.json" ]]; then
             echo "{}" > "$f"
         else
