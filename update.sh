@@ -96,8 +96,63 @@ info "Restarting services..."
 docker compose up -d --remove-orphans
 
 info "Memperbarui daftar ancaman (Rules) Suricata..."
-docker exec suricata_main suricata-update || warn "Gagal update rules Suricata (mungkin belum siap)."
-docker exec suricata_main kill -USR2 1 || true # Reload rules tanpa matiin kontainer
+
+# Tunggu suricata_main siap (maks 30 detik)
+for i in $(seq 1 30); do
+    if docker exec suricata_main suricata --version >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+
+# ── Update index sumber rules dari internet ───────────────────────────────────
+info "Mengambil daftar sumber rules terbaru..."
+docker exec suricata_main suricata-update update-sources 2>/dev/null || \
+    warn "Gagal update-sources (cek koneksi internet)."
+
+# ── Aktifkan semua sumber rules gratis terbaik ───────────────────────────────
+info "Mengaktifkan sumber rules tambahan (gratis)..."
+
+# ET Open — sudah aktif by default, tapi pastikan tetap aktif
+docker exec suricata_main suricata-update enable-source et/open 2>/dev/null || true
+
+# Positive Technologies — Deteksi serangan web & exploit tingkat lanjut
+docker exec suricata_main suricata-update enable-source ptresearch/attackdetection 2>/dev/null && \
+    info "✓ ptresearch/attackdetection diaktifkan" || \
+    warn "✗ ptresearch/attackdetection gagal (mungkin butuh registrasi)"
+
+# tgreen/hunting — Rules khusus threat hunting & anomali jaringan
+docker exec suricata_main suricata-update enable-source tgreen/hunting 2>/dev/null && \
+    info "✓ tgreen/hunting diaktifkan" || \
+    warn "✗ tgreen/hunting tidak tersedia"
+
+# abuse.ch SSLBL — Blacklist SSL fingerprint malware & botnet
+docker exec suricata_main suricata-update enable-source sslbl/ssl-fp-blacklist 2>/dev/null && \
+    info "✓ sslbl/ssl-fp-blacklist diaktifkan" || \
+    warn "✗ sslbl tidak tersedia"
+
+# abuse.ch Botnet C2 — IP botnet & C2 server terkenal per port
+docker exec suricata_main suricata-update enable-source abuse.ch/botcc.port-grouped 2>/dev/null && \
+    info "✓ abuse.ch/botcc diaktifkan" || \
+    warn "✗ abuse.ch/botcc tidak tersedia"
+
+# OISF Traffic ID — Deteksi protokol & traffic fingerprinting
+docker exec suricata_main suricata-update enable-source oisf/trafficid 2>/dev/null && \
+    info "✓ oisf/trafficid diaktifkan" || \
+    warn "✗ oisf/trafficid tidak tersedia"
+
+# ── Jalankan update gabungan semua sumber ─────────────────────────────────────
+info "Menggabungkan semua rules dari semua sumber..."
+docker exec suricata_main suricata-update || warn "Gagal update rules Suricata."
+
+# Reload rules tanpa restart kontainer
+docker exec suricata_main kill -USR2 1 2>/dev/null || true
+info "Rules berhasil di-reload!"
+
+# Tampilkan jumlah rules yang aktif
+RULE_COUNT=$(docker exec suricata_main suricata-update --no-merge 2>/dev/null | grep -oP '\d+ rules' | tail -1 || echo "?")
+info "Total rules aktif: ${BOLD}${RULE_COUNT:-cek manual dengan: docker exec suricata_main suricata-update}${NC}"
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 header "3. Cleanup"
