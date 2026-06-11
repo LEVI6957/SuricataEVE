@@ -7,8 +7,8 @@ WORKDIR /app
 # Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    ufw \
     iptables \
+    ip6tables \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

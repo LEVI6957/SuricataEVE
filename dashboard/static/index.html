@@ -1160,9 +1160,11 @@
                 const r = await fetch('/api/settings', { headers: getAuthHeaders() });
                 if (!r.ok) return;
                 const s = await r.json();
-                if (s.webhook_url) document.getElementById('wh-url').value = s.webhook_url;
+                if (s.webhook_url)      document.getElementById('wh-url').value      = s.webhook_url;
+                if (s.webhook_headers && Object.keys(s.webhook_headers).length)
+                    document.getElementById('wh-headers').value = JSON.stringify(s.webhook_headers, null, 2);
                 if (s.threshold)   document.getElementById('set-threshold').value = s.threshold;
-                if (s.severity)    document.getElementById('set-severity').value = s.severity;
+                if (s.severity)    document.getElementById('set-severity').value   = s.severity;
             } catch (e) { }
         }
 
@@ -1235,11 +1237,16 @@
 
         function handleLogout() {
             localStorage.removeItem('levi_token');
+            authToken = '';
+            // Hentikan WebSocket
+            if (ws) { ws.onclose = null; ws.close(); ws = null; }
+            // Hentikan polling
+            if (window.pollInterval) { clearInterval(window.pollInterval); window.pollInterval = null; }
+            if (window.whInterval)   { clearInterval(window.whInterval);   window.whInterval   = null; }
             document.getElementById('loginOverlay').style.visibility = 'visible';
             document.getElementById('loginOverlay').style.opacity = '1';
             document.getElementById('loginUser').value = '';
             document.getElementById('loginPass').value = '';
-            // stop polling? not strictly necessary, they just hide the UI.
         }
 
         function checkAuth() {

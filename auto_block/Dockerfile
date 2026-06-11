@@ -6,9 +6,10 @@ LABEL description="Suricata Auto Firewall Blocking menggunakan iptables"
 
 WORKDIR /app
 
-# Install iptables dan dependensi sistem (UFW dihapus, tidak diperlukan)
+# Install iptables dan dependensi sistem
 RUN apt-get update && apt-get install -y --no-install-recommends \
     iptables \
+    ip6tables \
     iproute2 \
     && rm -rf /var/lib/apt/lists/*
 

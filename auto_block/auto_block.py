@@ -290,15 +290,16 @@ def unblock_ip(ip: str) -> bool:
 
 
 def list_blocked_iptables() -> list:
-    """Ambil daftar IP yang diblok dari chain SURICATA_BLOCK."""
-    result = run_ipt(["-n", "-L", IPTABLES_CHAIN, "--line-numbers"])
+    """Ambil daftar IP yang diblok dari chain SURICATA_BLOCK (IPv4 + IPv6)."""
     ips = []
-    if result.returncode == 0:
-        for line in result.stdout.splitlines():
-            # Format: num  DROP  all  --  <src_ip>  0.0.0.0/0
-            parts = line.split()
-            if len(parts) >= 5 and parts[1] == "DROP":
-                ips.append(parts[4])
+    for version in [4, 6]:
+        result = run_ipt(["-n", "-L", IPTABLES_CHAIN, "--line-numbers"], ip_version=version)
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                # Format: num  DROP  all  --  <src_ip>  0.0.0.0/0
+                parts = line.split()
+                if len(parts) >= 5 and parts[1] == "DROP":
+                    ips.append(parts[4])
     return ips
 
 
