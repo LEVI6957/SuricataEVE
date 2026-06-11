@@ -30,7 +30,7 @@ from pydantic import BaseModel
 EVE_LOG_PATH  = os.getenv("EVE_LOG_PATH",  "/var/log/suricata/eve.json")
 BLOCKED_LOG   = os.getenv("BLOCKED_LOG",   "/app/blocked_ips.log")
 ALERT_COUNTS  = os.getenv("ALERT_COUNTS",  "/app/alert_counts.json")
-SETTINGS_FILE = "/app/settings.json"
+SETTINGS_FILE = os.getenv("SETTINGS_FILE", "/app/settings.json")
 IPTABLES_CHAIN = "SURICATA_BLOCK"
 
 logging.basicConfig(
