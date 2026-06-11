@@ -728,11 +728,6 @@
                     <div class="stat-value" id="stat-blocked">0</div>
                     <div class="stat-label">IP Diblok</div>
                 </div>
-                <div class="stat-card accent">
-                    <div class="stat-icon">🌐</div>
-                    <div class="stat-value" id="stat-top-ip">—</div>
-                    <div class="stat-label">Top Attacker</div>
-                </div>
                 <div class="stat-card success">
                     <div class="stat-icon">📡</div>
                     <div class="stat-value" id="stat-live">LIVE</div>
@@ -1043,9 +1038,6 @@
                 const m = Math.floor((s.uptime_seconds % 3600) / 60);
                 document.getElementById('uptime-val').textContent = `${h}h ${m}m`;
 
-                if (s.top_attackers?.length) {
-                    document.getElementById('stat-top-ip').textContent = s.top_attackers[0].ip;
-                }
             } catch (e) { }
         }
 
