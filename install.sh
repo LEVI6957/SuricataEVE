@@ -160,6 +160,9 @@ echo '{}' > auto_block/alert_counts.json  # State persistensi counter IP
 if [[ ! -f dashboard/settings.json ]]; then
     touch dashboard/settings.json
 fi
+if [[ ! -f dashboard/whitelist.json ]]; then
+    echo '[]' > dashboard/whitelist.json
+fi
 
 # Inisialisasi settings.json
 if [[ ! -f dashboard/settings.json ]]; then

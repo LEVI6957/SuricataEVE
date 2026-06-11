@@ -145,8 +145,18 @@ for vol in "${VOLUMES[@]}"; do
 done
 
 # ══════════════════════════════════════════════════════════════════════════════
-header "4. Hapus UFW Rules"
+header "4. Hapus Aturan iptables & UFW Firewall"
 # ══════════════════════════════════════════════════════════════════════════════
+
+info "Membersihkan aturan iptables Suricata (SURICATA_BLOCK)..."
+if command -v iptables &>/dev/null; then
+    iptables -D INPUT -j SURICATA_BLOCK 2>/dev/null || true
+    iptables -F SURICATA_BLOCK 2>/dev/null || true
+    iptables -X SURICATA_BLOCK 2>/dev/null || true
+    success "Aturan iptables SURICATA_BLOCK dibersihkan"
+else
+    warn "iptables tidak ditemukan, skip"
+fi
 
 if command -v ufw &>/dev/null; then
     info "Menghapus UFW rule port ${DASH_PORT}/tcp dan 5636/tcp..."

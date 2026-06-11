@@ -49,6 +49,7 @@ else
         info "Syncing files to ${INSTALL_DIR} (excluding configs/logs)..."
         rsync -av --no-perms --exclude='.env' \
              --exclude='dashboard/settings.json' \
+             --exclude='dashboard/whitelist.json' \
              --exclude='logs/' \
              --exclude='auto_block/blocked_ips.log' \
              --exclude='auto_block/alert_counts.json' \
@@ -61,6 +62,7 @@ else
         info "Syncing files..."
         rsync -av --no-perms --exclude='.env' \
              --exclude='dashboard/settings.json' \
+             --exclude='dashboard/whitelist.json' \
              --exclude='logs/' \
              --exclude='auto_block/blocked_ips.log' \
              --exclude='auto_block/alert_counts.json' \
