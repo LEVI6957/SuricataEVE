@@ -94,15 +94,21 @@ def _format_discord_payload(payload: dict) -> dict:
 
     # Pilih warna berdasarkan event type
     color = {
-        "BLOCKED":    0xEF4444,   # merah
-        "HIGH_ALERT": 0xF59E0B,   # kuning
-        "TEST":       0x6366F1,   # ungu
+        "BLOCKED":          0xEF4444,   # merah
+        "HIGH_ALERT":       0xF59E0B,   # kuning
+        "TEST":             0x6366F1,   # ungu
+        "WHITELIST_ADD":    0x22C55E,   # hijau
+        "WHITELIST_REMOVE": 0xF97316,   # orange
+        "UNBLOCKED":        0x3B82F6,   # biru
     }.get(event, 0x64748B)
 
     title_icon = {
-        "BLOCKED":    "🔒 IP Diblok",
-        "HIGH_ALERT": "⚠️ High Alert",
-        "TEST":       "🧪 Test Webhook",
+        "BLOCKED":          "🔒 IP Diblok",
+        "HIGH_ALERT":       "⚠️ High Alert",
+        "TEST":             "🧪 Test Webhook",
+        "WHITELIST_ADD":    "✅ Masuk Whitelist",
+        "WHITELIST_REMOVE": "❌ Keluar Whitelist",
+        "UNBLOCKED":        "🔓 IP Dibebaskan",
     }.get(event, f"📡 {event}")
 
     embed = {
@@ -426,12 +432,22 @@ async def get_whitelist():
 async def add_whitelist(ip: str):
     dynamic_whitelist.add(ip)
     save_whitelist()
+    asyncio.create_task(send_webhook({
+        "event": "WHITELIST_ADD",
+        "ip": ip,
+        "message": f"IP {ip} telah dimasukkan ke dalam Whitelist secara manual."
+    }))
     return {"status": "ok"}
 
 @app.delete("/api/whitelist/{ip}")
 async def remove_whitelist(ip: str):
     dynamic_whitelist.discard(ip)
     save_whitelist()
+    asyncio.create_task(send_webhook({
+        "event": "WHITELIST_REMOVE",
+        "ip": ip,
+        "message": f"IP {ip} telah dihapus dari Whitelist secara manual."
+    }))
     return {"status": "ok"}
 
 
@@ -458,6 +474,13 @@ async def unblock_ip_endpoint(ip: str, _=Depends(verify_token)):
 
     await broadcast({"type": "unblocked", "ip": ip})
     log.info(f"🔓 Unblocked: {ip}")
+    
+    asyncio.create_task(send_webhook({
+        "event": "UNBLOCKED",
+        "ip": ip,
+        "message": f"IP {ip} telah dibebaskan dari blokir (Unblock) secara manual melalui Dashboard."
+    }))
+    
     return {"status": "ok", "ip": ip, "iptables_ok": ok}
 
 
