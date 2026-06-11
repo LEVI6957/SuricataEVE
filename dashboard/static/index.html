@@ -745,6 +745,28 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Whitelist Manager -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">🛡️ Whitelist Manager (IP Kebal)</div>
+                    </div>
+                    <div class="form-row">
+                        <div class="field">
+                            <label>Tambah IP ke Whitelist</label>
+                            <div style="display:flex; gap:.5rem;">
+                                <input id="wl-ip-input" type="text" placeholder="Contoh: 192.168.1.10" style="flex:1;" />
+                                <button class="btn btn-primary btn-sm" onclick="addWhitelist()">Tambah</button>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;font-weight:600;">Daftar Whitelist</div>
+                            <div id="whitelist-list" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;min-height:100px;max-height:150px;overflow-y:auto;padding:.5rem;">
+                                <div class="empty-state" style="padding:.75rem">Belum ada IP di Whitelist.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
@@ -1008,6 +1030,51 @@
             } catch (e) { }
         }
 
+        // ── Whitelist Manager ─────────────────────
+        async function loadWhitelist() {
+            try {
+                const r = await fetch('/api/whitelist', { headers: getAuthHeaders() });
+                const list = await r.json();
+                const container = document.getElementById('whitelist-list');
+                if (!list.length) {
+                    container.innerHTML = '<div class="empty-state">Whitelist kosong.</div>';
+                    return;
+                }
+                container.innerHTML = list.map(ip => `
+                    <div class="wh-entry">
+                        <span class="ip-mono">${escHtml(ip)}</span>
+                        <button class="btn-unblock" onclick="removeWhitelist('${escHtml(ip)}')">Hapus</button>
+                    </div>
+                `).join('');
+            } catch (e) { }
+        }
+
+        async function addWhitelist() {
+            const ipInput = document.getElementById('wl-ip-input');
+            const ip = ipInput.value.trim();
+            if (!ip) return;
+            try {
+                const r = await fetch(`/api/whitelist/${encodeURIComponent(ip)}`, { 
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                if (r.ok) { toast('✅ Ditambahkan'); ipInput.value = ''; loadWhitelist(); }
+                else toast('❌ Gagal', 'error');
+            } catch (e) { toast('❌ Error', 'error'); }
+        }
+
+        async function removeWhitelist(ip) {
+            if (!confirm(`Hapus ${ip} dari whitelist?`)) return;
+            try {
+                const r = await fetch(`/api/whitelist/${encodeURIComponent(ip)}`, { 
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                if (r.ok) { toast('✅ Dihapus'); loadWhitelist(); }
+                else toast('❌ Gagal', 'error');
+            } catch (e) { toast('❌ Error', 'error'); }
+        }
+
         // ── Settings ──────────────────────────────
         async function loadSettings() {
             try {
@@ -1053,6 +1120,7 @@
         refreshBlocked();
         loadSettings();
         refreshWebhookLog();
+        loadWhitelist();
         pollStats();
         setInterval(pollStats, 10000);
         setInterval(refreshWebhookLog, 15000);

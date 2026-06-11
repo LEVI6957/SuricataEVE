@@ -335,6 +335,7 @@ async def tail_eve():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_initial_blocked()
+    load_whitelist()
     task = asyncio.create_task(tail_eve())
     yield
     task.cancel()
@@ -395,6 +396,43 @@ async def get_stats():
 @app.get("/api/blocked")
 async def get_blocked():
     return blocked_ips
+
+
+# ─── Dynamic Whitelist ────────────────────────────────────────────────────────
+WHITELIST_FILE = "whitelist.json"
+dynamic_whitelist = set()
+
+def load_whitelist():
+    global dynamic_whitelist
+    try:
+        if os.path.exists(WHITELIST_FILE):
+            with open(WHITELIST_FILE, "r") as f:
+                dynamic_whitelist = set(json.load(f))
+    except Exception as e:
+        log.error(f"Gagal load whitelist: {e}")
+
+def save_whitelist():
+    try:
+        with open(WHITELIST_FILE, "w") as f:
+            json.dump(list(dynamic_whitelist), f)
+    except Exception as e:
+        log.error(f"Gagal simpan whitelist: {e}")
+
+@app.get("/api/whitelist")
+async def get_whitelist():
+    return list(dynamic_whitelist)
+
+@app.post("/api/whitelist/{ip}")
+async def add_whitelist(ip: str):
+    dynamic_whitelist.add(ip)
+    save_whitelist()
+    return {"status": "ok"}
+
+@app.delete("/api/whitelist/{ip}")
+async def remove_whitelist(ip: str):
+    dynamic_whitelist.discard(ip)
+    save_whitelist()
+    return {"status": "ok"}
 
 
 @app.post("/api/unblock/{ip}")

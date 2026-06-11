@@ -43,6 +43,25 @@ WHITELIST_IPS = {"127.0.0.1", "::1", "0.0.0.0"}
 if env_whitelist:
     WHITELIST_IPS.update([ip.strip() for ip in env_whitelist.split(",") if ip.strip()])
 
+# Dynamic whitelist dari Dashboard UI
+dynamic_whitelist = set()
+last_whitelist_fetch = 0
+
+def get_dynamic_whitelist() -> set:
+    global dynamic_whitelist, last_whitelist_fetch
+    now = time.time()
+    # Fetch setiap 10 detik agar tidak membebani dashboard
+    if now - last_whitelist_fetch > 10:
+        try:
+            with httpx.Client(timeout=2) as client:
+                res = client.get(f"{DASHBOARD_URL}/api/whitelist")
+                if res.status_code == 200:
+                    dynamic_whitelist = set(res.json())
+                    last_whitelist_fetch = now
+        except Exception:
+            pass
+    return dynamic_whitelist
+
 # Subnet private yang tidak boleh diblok (RFC 1918)
 PRIVATE_NETWORKS = [
     ipaddress.ip_network("10.0.0.0/8"),
@@ -51,8 +70,12 @@ PRIVATE_NETWORKS = [
 ]
 
 def is_whitelisted(ip: str) -> bool:
-    if ip in WHITELIST_IPS:
+    if not ip or ip in WHITELIST_IPS:
         return True
+    
+    if ip in get_dynamic_whitelist():
+        return True
+
     try:
         addr = ipaddress.ip_address(ip)
         return any(addr in net for net in PRIVATE_NETWORKS)
