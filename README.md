@@ -65,7 +65,7 @@ sudo docker compose up -d
 Edit file `.env`:
 
 ```env
-SERVER_IP=192.168.1.5      # IP server kamu (untuk binding dashboard)
+SERVER_IP=x.x.x.x          # Ganti dengan IP server kamu (contoh: 192.168.1.10)
 DASHBOARD_PORT=8080        # Port dashboard
 NET_IFACE=eth0             # Network interface yang di-sniff Suricata (cek: ip a)
 BLOCK_THRESHOLD=3          # Jumlah alert sebelum IP diblok
@@ -80,8 +80,8 @@ ALERT_SEVERITY=2           # 1=High only, 2=Medium+High, 3=Semua alert
 
 | URL | Keterangan |
 |---|---|
-| `http://SERVER_IP:8080` | Dashboard utama (live feed + firewall control) |
-| `http://SERVER_IP:5636` | EveBox (analisis alert detail) |
+| `http://x.x.x.x:8080` | Dashboard utama (live feed + firewall control) |
+| `http://x.x.x.x:5636` | EveBox (analisis alert detail) |
 
 ---
 
