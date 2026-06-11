@@ -83,5 +83,5 @@ docker image prune -f
 echo ""
 header "✅ Update Complete!"
 echo -e "  🛡️  ${BOLD}Dashboard${NC}  : ${CYAN}http://$(hostname -I | awk '{print $1}'):${DASHBOARD_PORT:-8080}${NC}"
-echo -e "  📊  ${BOLD}EveBox${NC}     : ${CYAN}https://$(hostname -I | awk '{print $1}'):5636${NC}  <-- (Gunakan HTTPS)"
+echo -e "  📊  ${BOLD}EveBox${NC}     : ${CYAN}http://$(hostname -I | awk '{print $1}'):5636${NC}"
 echo ""
