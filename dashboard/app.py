@@ -358,7 +358,7 @@ def verify_token(x_token: Optional[str] = Header(default=None)):
 # ─── Routes ───────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    async with aiofiles.open("static/index.html", "r") as f:
+    async with aiofiles.open("static/index.html", "r", encoding="utf-8") as f:
         return await f.read()
 
 
