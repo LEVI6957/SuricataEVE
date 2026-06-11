@@ -11,9 +11,35 @@ set -uo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
-info()    { echo -e "${CYAN}[INFO]${NC}  $*"; }
-success() { echo -e "${GREEN}[OK]${NC}    $*"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
+# Print info messages
+function info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+# Print warnings
+function warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+# Auto-generate .env if missing
+if [ ! -f ".env" ]; then
+    info "File .env tidak ditemukan. Membuat file konfigurasi bawaan..."
+    IFACE=$(ip -o -4 route show to default | awk '{print $5}' | head -n 1)
+    if [ -z "$IFACE" ]; then IFACE="eth0"; fi
+    
+    echo "NET_IFACE=$IFACE" > .env
+    echo "SERVER_IP=$(hostname -I | awk '{print $1}')" >> .env
+    echo "DASHBOARD_PORT=8080" >> .env
+    echo "BLOCK_THRESHOLD=3" >> .env
+    echo "ALERT_SEVERITY=2" >> .env
+    info "Berhasil mendeteksi antarmuka jaringan: $IFACE"
+fi
+
+# Load variables from .env if present
+if [ -f .env ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+fi
+
 error()   { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 header()  { echo -e "\n${BOLD}${BLUE}══════════════════════════════════════════${NC}"; \
             echo -e "${BOLD}${BLUE}  $*${NC}"; \
