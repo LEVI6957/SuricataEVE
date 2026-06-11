@@ -619,10 +619,88 @@
             color: var(--muted);
             font-size: .85rem;
         }
+
+        /* ── Login Overlay ─────────────────── */
+        #loginOverlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(10, 14, 26, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.5s ease, visibility 0.5s;
+        }
+
+        .login-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 3rem 2.5rem;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 40px rgba(99, 102, 241, 0.1);
+            text-align: center;
+        }
+
+        .login-logo {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            filter: drop-shadow(0 0 15px rgba(99, 102, 241, 0.4));
+        }
+
+        .login-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            background: linear-gradient(135deg, var(--text), var(--muted));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .login-form input {
+            padding: 0.9rem 1.2rem;
+            font-size: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .login-btn {
+            margin-top: 0.5rem;
+            padding: 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            box-shadow: var(--glow);
+        }
+
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 30px rgba(99, 102, 241, 0.3);
+        }
     </style>
 </head>
 
 <body>
+    <!-- Login Overlay -->
+    <div id="loginOverlay">
+        <div class="login-box">
+            <div class="login-logo">🛡️</div>
+            <div class="login-title">SURICATA ACCESS</div>
+            <form class="login-form" id="loginForm" onsubmit="handleLogin(event)">
+                <input type="text" id="loginUser" placeholder="Username" required autocomplete="off" />
+                <input type="password" id="loginPass" placeholder="Password" required />
+                <button type="submit" class="btn btn-primary login-btn" id="loginBtn">ACCESS GRANTED</button>
+            </form>
+        </div>
+    </div>
     <div class="app">
         <header>
             <div class="logo">
@@ -633,6 +711,7 @@
                 <span id="ws-status"><span class="dot red" id="ws-dot"></span>Disconnected</span>
                 <span>⏱ Uptime: <b id="uptime-val">—</b></span>
                 <span>👥 Clients: <b id="clients-val">—</b></span>
+                <button class="btn btn-secondary btn-sm" onclick="handleLogout()" style="margin-left:1rem; border-color:var(--danger); color:var(--danger)">Logout</button>
             </div>
         </header>
 
@@ -1115,15 +1194,81 @@
             return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
+        // ── Auth & Login ──────────────────────────
+        async function handleLogin(e) {
+            e.preventDefault();
+            const btn = document.getElementById('loginBtn');
+            const u = document.getElementById('loginUser').value;
+            const p = document.getElementById('loginPass').value;
+            
+            btn.disabled = true;
+            btn.textContent = "VERIFYING...";
+
+            try {
+                const r = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: u, password: p })
+                });
+
+                if (r.ok) {
+                    const data = await r.json();
+                    localStorage.setItem('levi_token', data.token);
+                    authToken = data.token; // Update runtime auth
+                    document.getElementById('loginOverlay').style.opacity = '0';
+                    setTimeout(() => {
+                        document.getElementById('loginOverlay').style.visibility = 'hidden';
+                        initApp(); // start everything
+                    }, 500);
+                } else {
+                    const err = await r.json();
+                    alert(err.detail || "Access Denied.");
+                    btn.disabled = false;
+                    btn.textContent = "ACCESS GRANTED";
+                }
+            } catch(e) {
+                alert("Connection Error.");
+                btn.disabled = false;
+                btn.textContent = "ACCESS GRANTED";
+            }
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('levi_token');
+            document.getElementById('loginOverlay').style.visibility = 'visible';
+            document.getElementById('loginOverlay').style.opacity = '1';
+            document.getElementById('loginUser').value = '';
+            document.getElementById('loginPass').value = '';
+            // stop polling? not strictly necessary, they just hide the UI.
+        }
+
+        function checkAuth() {
+            const t = localStorage.getItem('levi_token');
+            if (t) {
+                authToken = t;
+                document.getElementById('loginOverlay').style.display = 'none';
+                initApp();
+            } else {
+                document.getElementById('loginOverlay').style.visibility = 'visible';
+                document.getElementById('loginOverlay').style.opacity = '1';
+            }
+        }
+
         // ── Init ──────────────────────────────────
-        connectWS();
-        refreshBlocked();
-        loadSettings();
-        refreshWebhookLog();
-        loadWhitelist();
-        pollStats();
-        setInterval(pollStats, 10000);
-        setInterval(refreshWebhookLog, 15000);
+        function initApp() {
+            connectWS();
+            refreshBlocked();
+            loadSettings();
+            refreshWebhookLog();
+            loadWhitelist();
+            pollStats();
+            if (!window.pollInterval) {
+                window.pollInterval = setInterval(pollStats, 10000);
+                window.whInterval = setInterval(refreshWebhookLog, 15000);
+            }
+        }
+
+        checkAuth();
     </script>
 </body>
 

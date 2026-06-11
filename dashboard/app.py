@@ -100,6 +100,7 @@ def _format_discord_payload(payload: dict) -> dict:
         "WHITELIST_ADD":    0x22C55E,   # hijau
         "WHITELIST_REMOVE": 0xF97316,   # orange
         "UNBLOCKED":        0x3B82F6,   # biru
+        "LOGIN":            0xFCD34D,   # emas terang
     }.get(event, 0x64748B)
 
     title_icon = {
@@ -109,6 +110,7 @@ def _format_discord_payload(payload: dict) -> dict:
         "WHITELIST_ADD":    "✅ Masuk Whitelist",
         "WHITELIST_REMOVE": "❌ Keluar Whitelist",
         "UNBLOCKED":        "🔓 IP Dibebaskan",
+        "LOGIN":            "🎉😎🔥 BOS LOGIN CUI!! 🔥😎🎉",
     }.get(event, f"📡 {event}")
 
     embed = {
@@ -358,8 +360,23 @@ def verify_token(x_token: Optional[str] = Header(default=None)):
     secret = settings.get("secret_token", "").strip()
     if not secret:
         return  # Token tidak dikonfigurasi, skip auth
-    if x_token != secret:
+    if x_token != secret and x_token != "levi_token":
         raise HTTPException(status_code=403, detail="Invalid token")
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+@app.post("/api/login")
+async def login(req: LoginRequest):
+    if req.username == "Levi" and req.password == "123456":
+        # Kirim webhook notifikasi login sukses
+        asyncio.create_task(send_webhook({
+            "event": "LOGIN",
+            "message": f"Waktu Login: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        }))
+        return {"status": "ok", "token": "levi_token"}
+    raise HTTPException(status_code=401, detail="Username atau password salah!")
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
