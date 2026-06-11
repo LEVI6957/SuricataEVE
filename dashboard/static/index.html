@@ -1263,7 +1263,7 @@
             loadWhitelist();
             pollStats();
             if (!window.pollInterval) {
-                window.pollInterval = setInterval(pollStats, 10000);
+                window.pollInterval = setInterval(pollStats, 2000);
                 window.whInterval = setInterval(refreshWebhookLog, 15000);
             }
         }

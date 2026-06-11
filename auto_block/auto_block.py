@@ -159,10 +159,11 @@ def notify_dashboard(payload: dict):
 
 
 # ─── iptables Manager ─────────────────────────────────────────────────────────
-def run_ipt(args: list, check: bool = False) -> subprocess.CompletedProcess:
-    """Jalankan perintah iptables."""
+def run_ipt(args: list, ip_version: int = 4, check: bool = False) -> subprocess.CompletedProcess:
+    """Jalankan perintah iptables atau ip6tables berdasarkan versi IP."""
+    cmd = "iptables" if ip_version == 4 else "ip6tables"
     return subprocess.run(
-        ["iptables"] + args,
+        [cmd] + args,
         capture_output=True,
         text=True,
         check=check,
@@ -178,28 +179,38 @@ def is_iptables_available() -> bool:
 def setup_chain():
     """
     Buat custom chain SURICATA_BLOCK jika belum ada,
-    lalu hubungkan ke INPUT dan FORWARD.
+    lalu hubungkan ke INPUT dan FORWARD untuk IPv4 dan IPv6.
     """
-    # Cek apakah chain sudah ada
-    check = run_ipt(["-n", "-L", IPTABLES_CHAIN])
-    if check.returncode != 0:
-        # Buat chain baru
-        run_ipt(["-N", IPTABLES_CHAIN])
-        log.info(f"Chain {IPTABLES_CHAIN} berhasil dibuat")
-    else:
-        log.info(f"Chain {IPTABLES_CHAIN} sudah ada")
+    for version in [4, 6]:
+        cmd_name = "iptables" if version == 4 else "ip6tables"
+        # Cek apakah chain sudah ada
+        check = run_ipt(["-n", "-L", IPTABLES_CHAIN], ip_version=version)
+        if check.returncode != 0:
+            # Buat chain baru
+            run_ipt(["-N", IPTABLES_CHAIN], ip_version=version)
+            log.info(f"Chain {IPTABLES_CHAIN} berhasil dibuat di {cmd_name}")
+        else:
+            log.info(f"Chain {IPTABLES_CHAIN} sudah ada di {cmd_name}")
 
-    # Pastikan chain terhubung ke INPUT (hindari duplikat)
-    for hook in ["INPUT", "FORWARD"]:
-        check_jump = run_ipt(["-C", hook, "-j", IPTABLES_CHAIN])
-        if check_jump.returncode != 0:
-            run_ipt(["-I", hook, "1", "-j", IPTABLES_CHAIN])
-            log.info(f"Chain {IPTABLES_CHAIN} dihubungkan ke {hook}")
+        # Pastikan chain terhubung ke INPUT (hindari duplikat)
+        for hook in ["INPUT", "FORWARD"]:
+            check_jump = run_ipt(["-C", hook, "-j", IPTABLES_CHAIN], ip_version=version)
+            if check_jump.returncode != 0:
+                run_ipt(["-I", hook, "1", "-j", IPTABLES_CHAIN], ip_version=version)
+                log.info(f"Chain {IPTABLES_CHAIN} dihubungkan ke {hook} di {cmd_name}")
+
+
+def get_ip_version(ip: str) -> int:
+    try:
+        return ipaddress.ip_address(ip).version
+    except ValueError:
+        return 4
 
 
 def is_ip_blocked_in_iptables(ip: str) -> bool:
     """Cek apakah IP sudah ada di chain SURICATA_BLOCK."""
-    result = run_ipt(["-C", IPTABLES_CHAIN, "-s", ip, "-j", "DROP"])
+    version = get_ip_version(ip)
+    result = run_ipt(["-C", IPTABLES_CHAIN, "-s", ip, "-j", "DROP"], ip_version=version)
     return result.returncode == 0
 
 
@@ -208,17 +219,19 @@ def block_ip(ip: str, signature: str, count: int) -> bool:
     if ip in blocked_ips or is_whitelisted(ip):
         return False
 
+    version = get_ip_version(ip)
+
     # Double-check di iptables langsung (hindari duplikat rule)
     if is_ip_blocked_in_iptables(ip):
         blocked_ips.add(ip)
         return False
 
-    result = run_ipt(["-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"])
+    result = run_ipt(["-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"], ip_version=version)
 
     if result.returncode == 0:
         blocked_ips.add(ip)
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        log.warning(f"🔒 DIBLOK [iptables]: {ip} | {signature} | hit={count}")
+        log.warning(f"🔒 DIBLOK [IPv{version}]: {ip} | {signature} | hit={count}")
 
         # Tulis ke log file
         try:
@@ -237,7 +250,7 @@ def block_ip(ip: str, signature: str, count: int) -> bool:
         })
         return True
     else:
-        log.error(f"Gagal blok {ip} via iptables: {result.stderr.strip()}")
+        log.error(f"Gagal blok {ip} via IPv{version}: {result.stderr.strip()}")
         return False
 
 
@@ -247,7 +260,8 @@ def unblock_ip(ip: str) -> bool:
         blocked_ips.discard(ip)
         return False
 
-    result = run_ipt(["-D", IPTABLES_CHAIN, "-s", ip, "-j", "DROP"])
+    version = get_ip_version(ip)
+    result = run_ipt(["-D", IPTABLES_CHAIN, "-s", ip, "-j", "DROP"], ip_version=version)
     if result.returncode == 0:
         blocked_ips.discard(ip)
         log.info(f"🔓 DIBEBASKAN [iptables]: {ip}")
