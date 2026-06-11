@@ -35,11 +35,11 @@ for cname in suricata_main evebox_ui auto_block suricata_dashboard; do
 done
 
 # Fix permissions on logs directory so EveBox (non-root) can access it
-if [ -d "logs" ]; then
-    info "Fixing permissions for logs directory..."
-    chmod -R 755 logs
-    chmod 644 logs/eve.json 2>/dev/null || touch logs/eve.json && chmod 644 logs/eve.json
-fi
+info "Fixing permissions for logs directory..."
+mkdir -p logs
+touch logs/eve.json
+chmod -R 755 logs
+chmod 644 logs/eve.json
 
 # Pastikan file-file yang di-mount ada sebagai file (mencegah Docker membuatnya sebagai direktori)
 for f in "dashboard/settings.json" "dashboard/whitelist.json" "auto_block/alert_counts.json" "auto_block/blocked_ips.log"; do
