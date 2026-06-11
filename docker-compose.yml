@@ -20,7 +20,8 @@ services:
     image: jasonish/evebox:latest
     container_name: evebox_ui
     restart: on-failure
-    network_mode: "host"
+    ports:
+      - "5636:5636"
     volumes:
       - ./logs:/var/log/suricata:ro # Baca log dari host (read-only)
       - evebox-data:/var/lib/evebox
