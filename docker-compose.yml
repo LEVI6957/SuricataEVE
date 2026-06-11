@@ -69,6 +69,7 @@ services:
       - ./auto_block/blocked_ips.log:/app/blocked_ips.log   # Baca log IP diblok
       - ./auto_block/alert_counts.json:/app/alert_counts.json # Sync state
       - ./dashboard/settings.json:/app/settings.json         # Persistent settings
+      - ./dashboard/whitelist.json:/app/whitelist.json
     environment:
       - EVE_LOG_PATH=/var/log/suricata/eve.json
       - BLOCKED_LOG=/app/blocked_ips.log

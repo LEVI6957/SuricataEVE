@@ -88,6 +88,11 @@ if [ -d "logs" ]; then
     chmod 644 logs/eve.json 2>/dev/null || touch logs/eve.json && chmod 644 logs/eve.json
 fi
 
+# Pastikan file whitelist ada agar tidak error saat di-mount
+if [[ ! -f "dashboard/whitelist.json" ]]; then
+    echo "[]" > dashboard/whitelist.json
+fi
+
 info "Rebuilding images (with cache to speed up)..."
 docker compose build
 
