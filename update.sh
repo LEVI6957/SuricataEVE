@@ -60,11 +60,18 @@ for f in "dashboard/settings.json" "dashboard/whitelist.json" "auto_block/alert_
     fi
 done
 
-info "Rebuilding images (with cache to speed up)..."
+info "Menarik versi terbaru dari Docker Hub (Suricata & Evebox)..."
+docker compose pull
+
+info "Rebuilding custom images (dengan cache)..."
 docker compose build
 
 info "Restarting services..."
 docker compose up -d --remove-orphans
+
+info "Memperbarui daftar ancaman (Rules) Suricata..."
+docker exec suricata_main suricata-update || warn "Gagal update rules Suricata (mungkin belum siap)."
+docker exec suricata_main kill -USR2 1 || true # Reload rules tanpa matiin kontainer
 
 # ══════════════════════════════════════════════════════════════════════════════
 header "3. Cleanup"
