@@ -20,3 +20,8 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Dashboard State
+dashboard/settings.json
+dashboard/alert_counts.json
+dashboard/blocked_ips.log
