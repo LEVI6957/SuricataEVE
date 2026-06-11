@@ -81,6 +81,14 @@ cd "$INSTALL_DIR" || error "Failed to cd to ${INSTALL_DIR}"
 header "2. Fix Permissions & Restart"
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Hapus kontainer manual yang bentrok (jika user pernah menjalankan dari ~/SuricataEVE)
+info "Membersihkan kontainer lama yang berpotensi bentrok..."
+for cname in suricata_main evebox_ui auto_block suricata_dashboard; do
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${cname}$"; then
+        docker rm -f "$cname" >/dev/null 2>&1 || true
+    fi
+done
+
 # Fix permissions on logs directory so EveBox (non-root) can access it
 if [ -d "logs" ]; then
     info "Fixing permissions for logs directory..."
