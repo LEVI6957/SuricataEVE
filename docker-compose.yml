@@ -27,7 +27,7 @@ services:
       - ./logs:/var/log/suricata:ro # Baca log dari host (read-only)
       - evebox-data:/var/lib/evebox
     command: >
-      evebox server --datastore sqlite --data-directory /var/lib/evebox --host 0.0.0.0 --no-auth --no-tls /var/log/suricata
+      evebox server --datastore sqlite --data-directory /var/lib/evebox --host 0.0.0.0 --no-auth --no-tls /var/log/suricata/eve.json
     depends_on:
       - suricata
 
