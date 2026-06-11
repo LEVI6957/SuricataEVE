@@ -13,8 +13,9 @@ services:
       - ./logs:/var/log/suricata # Mount log ke host
       - suricata-rules:/var/lib/suricata
       - suricata-config:/etc/suricata
-    # Interface dibaca otomatis dari .env (di-set oleh install.sh)
-    command: -i ${NET_IFACE:-enp86s0}
+    # Interface dibaca otomatis dari .env.
+    # HOME_NET di-override agar IP Kali Linux dianggap sebagai hacker dari luar (EXTERNAL_NET).
+    command: -i ${NET_IFACE:-enp86s0} --set vars.address-groups.HOME_NET=[${SERVER_IP}/32]
 
   evebox:
     image: jasonish/evebox:latest
