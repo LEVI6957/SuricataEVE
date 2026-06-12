@@ -3,14 +3,16 @@
 Sistem deteksi & pemblokiran otomatis berbasis **Suricata IDS**, dilengkapi web dashboard real-time.  
 Setiap IP penyerang yang memicu alert melebihi threshold akan **otomatis diblokir via iptables**.
 
+> 🎓 Proyek ini dibuat sebagai implementasi nyata sistem keamanan jaringan berbasis open-source untuk keperluan penelitian dan tugas akhir (skripsi).
+
 ---
 
-## Stack
+## Stack Teknologi
 
 | Service | Fungsi |
 |---|---|
-| **Suricata** | Network IDS — sniff traffic & tulis alert ke `eve.json` |
-| **EveBox** | UI viewer alert Suricata (analisis detail) |
+| **Suricata 8.x** | Network IDS — sniff traffic & tulis alert ke `eve.json` |
+| **EveBox** | UI viewer alert Suricata (analisis detail log) |
 | **auto_block** | Baca `eve.json` real-time, blok IP via **iptables** otomatis |
 | **dashboard** | Web UI: live feed alert, manage blocked IPs, webhook notifikasi |
 
@@ -21,15 +23,15 @@ Setiap IP penyerang yang memicu alert melebihi threshold akan **otomatis dibloki
 ## Cara Kerja
 
 ```
-Suricata sniff traffic
+Suricata sniff traffic (eth0 + lo)
        ↓
-   eve.json (log alert)
+   eve.json (log alert real-time)
        ↓
-auto_block.py membaca real-time
+auto_block.py baca real-time
        ↓
 IP mencapai threshold? → iptables -I SURICATA_BLOCK -s <IP> -j DROP
        ↓
-Notifikasi ke dashboard (WebSocket) + webhook (Discord/Slack/Telegram)
+Notifikasi ke Dashboard (WebSocket) + Webhook (Discord/Slack/Telegram)
 ```
 
 **iptables custom chain** `SURICATA_BLOCK` digunakan — terpisah dari rule firewall lain, mudah di-audit dan di-reset.
@@ -50,26 +52,30 @@ sudo apt update && sudo apt install -y docker.io docker-compose-plugin
 git clone https://github.com/LEVI6957/SuricataEVE.git
 cd SuricataEVE
 
-# 3. Konfigurasi environment
-cp .env.example .env
-nano .env   # sesuaikan NET_IFACE dan SERVER_IP
-
-# 4. Jalankan semua service
-sudo docker compose up -d
+# 3. Jalankan script instalasi otomatis
+sudo bash update.sh
 ```
+
+Script `update.sh` akan otomatis:
+- Mendeteksi network interface
+- Membuat file `.env`
+- Mengaktifkan semua sumber rules Suricata (ET Open + ptresearch + abuse.ch + tgreen + oisf)
+- Membangun dan menjalankan semua Docker container
 
 ---
 
 ## Konfigurasi
 
-Edit file `.env`:
+Edit file `.env` setelah instalasi:
 
 ```env
-SERVER_IP=x.x.x.x          # Ganti dengan IP server kamu (contoh: 192.168.1.10)
+SERVER_IP=0.0.0.0          # IP server (0.0.0.0 = semua interface)
 DASHBOARD_PORT=8080        # Port dashboard
 NET_IFACE=eth0             # Network interface yang di-sniff Suricata (cek: ip a)
 BLOCK_THRESHOLD=3          # Jumlah alert sebelum IP diblok
 ALERT_SEVERITY=2           # 1=High only, 2=Medium+High, 3=Semua alert
+DASHBOARD_USER=admin       # Username login dashboard
+DASHBOARD_PASS=admin123    # Password login dashboard (WAJIB diganti!)
 ```
 
 > **Cara cek network interface:** jalankan `ip a` di server, cari nama interface aktif (contoh: `eth0`, `ens33`, `enp3s0`)
@@ -88,10 +94,27 @@ ALERT_SEVERITY=2           # 1=High only, 2=Medium+High, 3=Semua alert
 ## Fitur Dashboard
 
 - 📡 **Live Feed** — alert Suricata tampil real-time via WebSocket
-- 🔒 **Blocked IPs** — daftar IP yang diblok + tombol Unblock
+- 🔒 **IP Diblok** — daftar IP yang diblok + tombol Unblock
+- 🛡️ **IP Whitelist** — daftar IP yang dikecualikan dari pemblokiran
 - 🔔 **Webhook Notifikasi** — kirim notifikasi ke Discord, Slack, atau Telegram otomatis
 - ⚙️ **Konfigurasi** — ubah threshold & severity langsung dari UI tanpa restart
-- 📊 **Stats** — total alert, total blocked, top attacker, uptime
+- 🚫 **Brute Force Guard** — login gagal 5x → IP penyerang otomatis diblokir
+- 📊 **Stats** — total alert, total blocked, jumlah whitelist, uptime
+
+---
+
+## Sumber Rules Suricata
+
+Sistem secara otomatis mengaktifkan rule database berikut (±40.000+ rules):
+
+| Sumber | Spesialisasi |
+|---|---|
+| **ET Open** | 28.500+ rules umum (default) |
+| **ptresearch/attackdetection** | Serangan web, exploit, APT |
+| **tgreen/hunting** | Threat hunting & anomali jaringan |
+| **sslbl/ssl-fp-blacklist** | SSL/TLS malware & botnet fingerprint |
+| **abuse.ch/botcc** | IP botnet & server C2 aktif |
+| **oisf/trafficid** | Deteksi protokol jaringan |
 
 ---
 
@@ -99,100 +122,61 @@ ALERT_SEVERITY=2           # 1=High only, 2=Medium+High, 3=Semua alert
 
 Konfigurasi langsung dari panel **Webhook Notifikasi** di dashboard — **tidak perlu restart**.
 
-| Platform | Format URL | Keterangan |
-|---|---|---|
-| **Discord** | `https://discord.com/api/webhooks/...` | Auto-format embed dengan warna & field |
-| **Slack** | `https://hooks.slack.com/services/...` | Format teks Slack |
-| **Telegram** | `https://api.telegram.org/bot<TOKEN>/sendMessage` | JSON generic |
-| **Custom** | URL apapun | JSON generic dikirim |
+Event yang memicu notifikasi:
+- `BLOCKED` — IP baru diblokir
+- `HIGH_ALERT` — Alert severity tinggi terdeteksi
+- `BRUTE FORCE` — Percobaan login paksa ke dashboard
+- `UNBLOCKED` — IP dibebaskan secara manual
+- `LOGIN` — Admin berhasil login
+- `WHITELIST_ADD/REMOVE` — Perubahan whitelist
+
+---
+
+## Simulasi Serangan (untuk Pengujian)
+
+Dari mesin penyerang (Kali Linux), jalankan:
+
+```bash
+# Download script simulasi
+curl -o ~/attack_sim.sh https://raw.githubusercontent.com/LEVI6957/SuricataEVE/main/attack_sim.sh
+
+# Jalankan simulasi 20 IP penyerang berbeda dengan payload Log4Shell
+sudo bash ~/attack_sim.sh <IP_SERVER> 8080
+```
 
 ---
 
 ## Perintah Berguna
 
 ```bash
-# Status semua service
-sudo docker compose ps
+# Cek status semua service
+docker compose ps
 
-# Monitor log auto-block (lihat IP yang diblok real-time)
-sudo docker compose logs -f auto_block
+# Lihat log Suricata
+docker compose logs -f suricata
 
-# Monitor log dashboard
-sudo docker compose logs -f dashboard
+# Lihat log dashboard
+docker compose logs -f dashboard
 
-# Cek rule iptables aktif (IP yang diblok)
-sudo iptables -n -L SURICATA_BLOCK
+# Cek IP yang diblokir iptables
+sudo iptables -n -L SURICATA_BLOCK --line-numbers
 
-# Update ke versi terbaru
-git pull origin main
-sudo docker compose down
-sudo docker compose build
-sudo docker compose up -d
+# Update sistem & rules
+sudo bash update.sh
 
-# Restart semua service
-sudo docker compose restart
-
-# Stop semua service
-sudo docker compose down
+# Hapus semua (uninstall)
+sudo bash uninstall.sh
 ```
 
 ---
 
-## Struktur Project
+## Lisensi
 
-```
-SuricataEVE/
-├── docker-compose.yml              # Orkestrasi semua service
-├── install.sh                      # Script instalasi otomatis
-├── .env.example                    # Template konfigurasi
-├── auto_block/
-│   ├── auto_block.py               # Engine: baca eve.json → blok via iptables
-│   └── Dockerfile
-├── dashboard/
-│   ├── app.py                      # FastAPI: REST API + WebSocket + Webhook
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── settings.json               # Penyimpanan webhook URL & konfigurasi
-│   └── static/
-│       └── index.html              # UI dark theme (glassmorphism)
-└── logs/                           # eve.json dari Suricata (auto-generated)
-```
-
----
-
-## Troubleshooting
-
-**Suricata tidak sniff traffic?**
-```bash
-# Pastikan NET_IFACE di .env benar
-ip a
-sudo docker compose logs suricata
-```
-
-**IP tidak terblok?**
-```bash
-# Pastikan container punya privilege iptables
-sudo docker compose logs auto_block
-sudo iptables -n -L SURICATA_BLOCK
-```
-
-**Webhook Discord tidak terkirim?**
-```bash
-# Cek log dashboard
-sudo docker compose logs dashboard
-# Pastikan URL format: https://discord.com/api/webhooks/ID/TOKEN
-```
-
-**Dashboard tidak bisa diakses?**
-```bash
-# Pastikan port 8080 tidak diblok
-sudo iptables -I INPUT -p tcp --dport 8080 -j ACCEPT
-```
+MIT License — lihat file [LICENSE](LICENSE)
 
 ---
 
 ## Author
 
-**Levi** — [github.com/LEVI6957](https://github.com/LEVI6957)
-
-> Project ini dirancang untuk **Linux (Ubuntu Server)**. Tidak dapat dijalankan langsung di Windows.
+**Levi** — [@LEVI6957](https://github.com/LEVI6957)  
+Dikembangkan sebagai proyek sistem keamanan jaringan berbasis open-source.

@@ -427,7 +427,7 @@ async def login(req: LoginRequest, request: Request):
         log.warning(f"🚫 BRUTE FORCE TERDETEKSI! IP: {client_ip}")
 
         # Jangan blokir jika IP ada di whitelist (mencegah admin lock diri sendiri)
-        if client_ip in whitelist_ips:
+        if client_ip in dynamic_whitelist:
             log.warning(f"⚠️  {client_ip} ada di whitelist — tidak diblokir via iptables.")
             raise HTTPException(
                 status_code=429,
