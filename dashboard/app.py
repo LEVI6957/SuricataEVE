@@ -424,7 +424,17 @@ async def login(req: LoginRequest, request: Request):
 
     if tracker["count"] >= LOGIN_MAX_ATTEMPTS:
         tracker["blocked"] = True
-        log.warning(f"🚫 BRUTE FORCE TERDETEKSI! Memblokir {client_ip} via iptables...")
+        log.warning(f"🚫 BRUTE FORCE TERDETEKSI! IP: {client_ip}")
+
+        # Jangan blokir jika IP ada di whitelist (mencegah admin lock diri sendiri)
+        if client_ip in whitelist_ips:
+            log.warning(f"⚠️  {client_ip} ada di whitelist — tidak diblokir via iptables.")
+            raise HTTPException(
+                status_code=429,
+                detail=f"Terlalu banyak percobaan login gagal! Tunggu sebelum mencoba lagi."
+            )
+
+        log.warning(f"🚫 Memblokir {client_ip} via iptables...")
 
         # Blok via iptables
         ok = _ipt_block_ip(client_ip)

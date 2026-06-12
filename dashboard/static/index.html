@@ -1256,7 +1256,9 @@
             const t = localStorage.getItem('levi_token');
             if (t) {
                 authToken = t;
-                document.getElementById('loginOverlay').style.display = 'none';
+                // Pakai visibility/opacity agar konsisten dengan handleLogin & handleLogout
+                document.getElementById('loginOverlay').style.visibility = 'hidden';
+                document.getElementById('loginOverlay').style.opacity = '0';
                 initApp();
             } else {
                 document.getElementById('loginOverlay').style.visibility = 'visible';
