@@ -134,7 +134,7 @@ Event yang memicu notifikasi:
 
 ## Simulasi Serangan (untuk Pengujian)
 
-Dari mesin penyerang (Kali Linux), jalankan:
+Dari mesin penyerang, jalankan:
 
 ```bash
 # Download script simulasi
