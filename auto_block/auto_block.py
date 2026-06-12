@@ -80,13 +80,6 @@ def update_dynamic_settings():
             pass
         last_settings_fetch = now
 
-# Subnet private yang tidak boleh diblok (RFC 1918)
-PRIVATE_NETWORKS = [
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    # ipaddress.ip_network("192.168.0.0/16"), # Dihapus sementara untuk testing
-]
-
 def is_whitelisted(ip: str) -> bool:
     if not ip or ip in WHITELIST_IPS:
         return True
@@ -94,11 +87,7 @@ def is_whitelisted(ip: str) -> bool:
     if ip in get_dynamic_whitelist():
         return True
 
-    try:
-        addr = ipaddress.ip_address(ip)
-        return any(addr in net for net in PRIVATE_NETWORKS)
-    except ValueError:
-        return False
+    return False
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
