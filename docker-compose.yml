@@ -13,6 +13,8 @@ services:
       - ./logs:/var/log/suricata # Mount log ke host
       - suricata-rules:/var/lib/suricata
       - suricata-config:/etc/suricata
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     # Interface utama + loopback. Checksum dimatikan agar bisa mendeteksi serangan dari localhost
     command: -i ${NET_IFACE:-enp86s0} -i lo --set stream.checksum-validation=no
 
@@ -25,6 +27,8 @@ services:
     volumes:
       - ./logs:/var/log/suricata:ro # Baca log dari host (read-only)
       - evebox-data:/var/lib/evebox
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     command: >
       evebox server --datastore sqlite --data-directory /var/lib/evebox --host 0.0.0.0 --no-auth --no-tls /var/log/suricata/eve.json
     depends_on:
@@ -46,6 +50,8 @@ services:
       - ./auto_block/blocked_ips.log:/app/blocked_ips.log   # Log IP diblok
       - ./auto_block/alert_counts.json:/app/alert_counts.json # Sync state
       - ./dashboard/settings.json:/app/settings.json         # Baca setting dashboard
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     environment:
       - EVE_LOG_PATH=/var/log/suricata/eve.json
       - BLOCK_THRESHOLD=${BLOCK_THRESHOLD:-3}
@@ -71,6 +77,8 @@ services:
       - ./auto_block/alert_counts.json:/app/alert_counts.json # Sync state
       - ./dashboard/settings.json:/app/settings.json         # Persistent settings
       - ./dashboard/whitelist.json:/app/whitelist.json
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     environment:
       - EVE_LOG_PATH=/var/log/suricata/eve.json
       - BLOCKED_LOG=/app/blocked_ips.log
