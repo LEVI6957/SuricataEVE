@@ -106,6 +106,7 @@ def _format_discord_payload(payload: dict) -> dict:
         "WHITELIST_REMOVE": 0xF97316,   # orange
         "UNBLOCKED":        0x3B82F6,   # biru
         "LOGIN":            0xFCD34D,   # emas terang
+        "LOGOUT":           0x9CA3AF,   # abu-abu
     }.get(event, 0x64748B)
 
     title_icon = {
@@ -116,6 +117,7 @@ def _format_discord_payload(payload: dict) -> dict:
         "WHITELIST_REMOVE": "❌ Keluar Whitelist",
         "UNBLOCKED":        "🔓 IP Dibebaskan",
         "LOGIN":            "🎉😎🔥 BOS LOGIN CUI!! 🔥😎🎉",
+        "LOGOUT":           "YAAAHHH BOS LOG OUT SAD!!! 😭😭😭💔💔",
     }.get(event, f"📡 {event}")
 
     embed = {
@@ -478,6 +480,15 @@ async def login(req: LoginRequest, request: Request):
         status_code=401,
         detail=f"Username atau password salah! Sisa percobaan: {max(0, attempts_left)}"
     )
+
+@app.post("/api/logout", dependencies=[Depends(verify_token)])
+async def logout(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    asyncio.create_task(send_webhook({
+        "event": "LOGOUT",
+        "message": f"Logout berhasil dari {client_ip} — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+    }))
+    return {"status": "ok"}
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
