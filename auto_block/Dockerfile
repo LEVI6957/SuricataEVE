@@ -9,7 +9,6 @@ WORKDIR /app
 # Install iptables dan dependensi sistem
 RUN apt-get update && apt-get install -y --no-install-recommends \
     iptables \
-    ip6tables \
     iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
