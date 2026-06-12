@@ -38,11 +38,21 @@ if [ ! -f ".env" ]; then
     warn "⚠️  Ganti DASHBOARD_USER dan DASHBOARD_PASS di file .env sebelum dipakai!"
 fi
 
+# Auto-update IP & Interface if it changed (Misal dari NAT ke Bridged)
+if [ -f ".env" ]; then
+    CURRENT_IFACE=$(ip -o -4 route show to default | awk '{print $5}' | head -n 1)
+    if [ -z "$CURRENT_IFACE" ]; then CURRENT_IFACE="eth0"; fi
+    CURRENT_IP=$(hostname -I | awk '{print $1}')
+
+    sed -i "s/^NET_IFACE=.*/NET_IFACE=$CURRENT_IFACE/" .env
+    sed -i "s/^SERVER_IP=.*/SERVER_IP=$CURRENT_IP/" .env
+    info "Network Auto-Detect: IFACE=$CURRENT_IFACE | IP=$CURRENT_IP"
+fi
+
 # Load variables from .env if present
 if [ -f .env ]; then
     export $(cat .env | grep -v '^#' | xargs)
 fi
-
 error()   { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 header()  { echo -e "\n${BOLD}${BLUE}══════════════════════════════════════════${NC}"; \
             echo -e "${BOLD}${BLUE}  $*${NC}"; \
