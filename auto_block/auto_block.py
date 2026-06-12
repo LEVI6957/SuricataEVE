@@ -161,8 +161,8 @@ def notify_dashboard(payload: dict):
     try:
         with httpx.Client(timeout=3) as client:
             client.post(f"{DASHBOARD_URL}/internal/event", json=payload)
-    except Exception:
-        pass  # Dashboard mungkin belum ready, tidak perlu fatal
+    except Exception as e:
+        log.error(f"Gagal kirim notifikasi ke dashboard ({DASHBOARD_URL}): {e}")  # Dashboard mungkin belum ready, tidak perlu fatal
 
 
 # ─── iptables Manager ─────────────────────────────────────────────────────────
@@ -302,7 +302,7 @@ def tail_eve_json(filepath: str):
     log.info(f"Membaca eve.json: {filepath}")
     with open(filepath, "r") as f:
         f.seek(0, 2)  # Loncat ke akhir file (tail mode)
-        while running:
+        while True:
             line = f.readline()
             if not line:
                 time.sleep(0.2)
