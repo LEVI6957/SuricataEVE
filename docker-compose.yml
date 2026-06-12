@@ -21,8 +21,7 @@ services:
     container_name: evebox_ui
     restart: on-failure
     user: "root"
-    ports:
-      - "5636:5636"
+    network_mode: "host"
     volumes:
       - ./logs:/var/log/suricata:ro # Baca log dari host (read-only)
       - evebox-data:/var/lib/evebox
