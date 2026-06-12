@@ -25,8 +25,18 @@ if [[ -z "$IFACE" ]]; then
     IFACE="eth0"
 fi
 
-# Range IP virtual yang akan dibuat (192.168.1.50 - 192.168.1.69)
-IP_BASE="192.168.1"
+# Ambil IP address dari interface tersebut
+KALI_IP=$(ip -o -4 addr show dev "$IFACE" | awk '{print $4}' | cut -d/ -f1)
+
+# Buat base IP berdasarkan 3 oktet pertama dari IP Kali
+# (Contoh: jika IP Kali 170.2.50.10 -> IP_BASE=170.2.50)
+IP_BASE=$(echo "$KALI_IP" | cut -d. -f1,2,3)
+
+if [[ -z "$IP_BASE" ]]; then
+    IP_BASE="192.168.1" # Fallback
+fi
+
+# Range IP virtual yang akan dibuat (Contoh: 170.2.50.50 - 170.2.50.69)
 IP_START=50
 IP_COUNT=20
 
