@@ -34,6 +34,10 @@ ALERT_COUNTS  = os.getenv("ALERT_COUNTS",  "/app/alert_counts.json")
 SETTINGS_FILE = os.getenv("SETTINGS_FILE", "/app/settings.json")
 IPTABLES_CHAIN = "SURICATA_BLOCK"
 
+# ─── Kredensial Login (dibaca dari environment variable) ─────────────────────
+DASHBOARD_USER = os.getenv("DASHBOARD_USER", "admin")
+DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "admin123")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -377,7 +381,7 @@ class LoginRequest(BaseModel):
 
 @app.post("/api/login")
 async def login(req: LoginRequest):
-    if req.username == "Levi" and req.password == "123456":
+    if req.username == DASHBOARD_USER and req.password == DASHBOARD_PASS:
         # Kirim webhook notifikasi login sukses
         asyncio.create_task(send_webhook({
             "event": "LOGIN",

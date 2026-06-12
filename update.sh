@@ -32,7 +32,10 @@ if [ ! -f ".env" ]; then
     echo "DASHBOARD_PORT=8080" >> .env
     echo "BLOCK_THRESHOLD=3" >> .env
     echo "ALERT_SEVERITY=2" >> .env
+    echo "DASHBOARD_USER=admin" >> .env
+    echo "DASHBOARD_PASS=admin123" >> .env
     info "Berhasil mendeteksi antarmuka jaringan: $IFACE"
+    warn "⚠️  Ganti DASHBOARD_USER dan DASHBOARD_PASS di file .env sebelum dipakai!"
 fi
 
 # Load variables from .env if present
