@@ -366,29 +366,98 @@ app = FastAPI(title="Suricata Dashboard", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-# ─── Auth ─────────────────────────────────────────────────────────────────────
-def verify_token(x_token: Optional[str] = Header(default=None)):
-    settings = load_settings()
-    secret = settings.get("secret_token", "").strip()
-    if not secret:
-        return  # Token tidak dikonfigurasi, skip auth
-    if x_token != secret and x_token != "levi_token":
-        raise HTTPException(status_code=403, detail="Invalid token")
+# ─── Brute Force Protection ──────────────────────────────────────────────────
+# Track percobaan login gagal per IP: {ip: {"count": int, "blocked": bool}}
+login_fail_tracker: dict = defaultdict(lambda: {"count": 0, "blocked": False})
+LOGIN_MAX_ATTEMPTS = 5  # Blok setelah 5x gagal
+
+def _ipt_block_ip(ip: str) -> bool:
+    """Block IP via iptables langsung dari dashboard (untuk brute force login)."""
+    try:
+        version = ipaddress.ip_address(ip).version
+    except ValueError:
+        version = 4
+    cmd = "iptables" if version == 4 else "ip6tables"
+    result = subprocess.run(
+        [cmd, "-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"],
+        capture_output=True, text=True
+    )
+    return result.returncode == 0
 
 class LoginRequest(BaseModel):
     username: str
     password: str
 
 @app.post("/api/login")
-async def login(req: LoginRequest):
+async def login(req: LoginRequest, request: Request):
+    # Ambil IP penyerang
+    client_ip = request.client.host if request.client else "unknown"
+
+    # Cek apakah IP ini sudah diblok karena brute force
+    tracker = login_fail_tracker[client_ip]
+    if tracker["blocked"]:
+        raise HTTPException(status_code=429, detail="IP Anda diblokir karena terlalu banyak percobaan login gagal.")
+
     if req.username == DASHBOARD_USER and req.password == DASHBOARD_PASS:
-        # Kirim webhook notifikasi login sukses
+        # Reset counter jika login berhasil
+        login_fail_tracker[client_ip] = {"count": 0, "blocked": False}
         asyncio.create_task(send_webhook({
             "event": "LOGIN",
-            "message": f"Waktu Login: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            "message": f"Login berhasil dari {client_ip} — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
         }))
         return {"status": "ok", "token": "levi_token"}
-    raise HTTPException(status_code=401, detail="Username atau password salah!")
+
+    # Login gagal — tambah counter
+    tracker["count"] += 1
+    attempts_left = LOGIN_MAX_ATTEMPTS - tracker["count"]
+    log.warning(f"❌ Login gagal dari {client_ip} — percobaan {tracker['count']}/{LOGIN_MAX_ATTEMPTS}")
+
+    if tracker["count"] >= LOGIN_MAX_ATTEMPTS:
+        tracker["blocked"] = True
+        log.warning(f"🚫 BRUTE FORCE TERDETEKSI! Memblokir {client_ip} via iptables...")
+
+        # Blok via iptables
+        ok = _ipt_block_ip(client_ip)
+
+        # Tambah ke daftar blocked_ips dashboard
+        ts = datetime.now(timezone.utc).isoformat()
+        if not any(b["ip"] == client_ip for b in blocked_ips):
+            blocked_ips.insert(0, {
+                "ip":        client_ip,
+                "timestamp": ts,
+                "signature": "BRUTE FORCE — Login Dashboard (5x Gagal)",
+                "count":     LOGIN_MAX_ATTEMPTS,
+            })
+            stats["total_blocked"] += 1
+
+        # Broadcast ke UI
+        await broadcast({
+            "type":      "blocked",
+            "src_ip":    client_ip,
+            "signature": "BRUTE FORCE — Login Dashboard (5x Gagal)",
+            "count":     LOGIN_MAX_ATTEMPTS,
+            "timestamp": ts,
+        })
+
+        # Kirim webhook
+        await send_webhook({
+            "event":     "BLOCKED",
+            "ip":        client_ip,
+            "signature": "BRUTE FORCE LOGIN — Dashboard (5x percobaan gagal)",
+            "severity":  1,
+            "hit_count": LOGIN_MAX_ATTEMPTS,
+            "timestamp": ts,
+        })
+
+        raise HTTPException(
+            status_code=429,
+            detail=f"IP {client_ip} diblokir karena {LOGIN_MAX_ATTEMPTS}x percobaan login gagal!"
+        )
+
+    raise HTTPException(
+        status_code=401,
+        detail=f"Username atau password salah! Sisa percobaan: {max(0, attempts_left)}"
+    )
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
