@@ -228,37 +228,34 @@ def block_ip(ip: str, signature: str, count: int) -> bool:
 
     version = get_ip_version(ip)
 
-    # Double-check di iptables langsung (hindari duplikat rule)
-    if is_ip_blocked_in_iptables(ip):
-        blocked_ips.add(ip)
-        return False
+    # Coba jalankan iptables insert
+    if not is_ip_blocked_in_iptables(ip):
+        result = run_ipt(["-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"], ip_version=version)
+        if result.returncode != 0:
+            log.error(f"Gagal blok {ip} via IPv{version}: {result.stderr.strip()}")
+            return False
 
-    result = run_ipt(["-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"], ip_version=version)
+    # Jika sampai sini, berarti berhasil diblok atau sudah terblokir sebelumnya
+    blocked_ips.add(ip)
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    log.warning(f"🔒 DIBLOK [IPv{version}]: {ip} | {signature} | hit={count}")
 
-    if result.returncode == 0:
-        blocked_ips.add(ip)
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        log.warning(f"🔒 DIBLOK [IPv{version}]: {ip} | {signature} | hit={count}")
+    # Tulis ke log file
+    try:
+        with open(BLOCKED_LOG, "a") as f:
+            f.write(f"{ts} | BLOCKED | {ip} | {signature}\n")
+    except Exception as e:
+        log.warning(f"Gagal tulis log: {e}")
 
-        # Tulis ke log file
-        try:
-            with open(BLOCKED_LOG, "a") as f:
-                f.write(f"{ts} | BLOCKED | {ip} | {signature}\n")
-        except Exception as e:
-            log.warning(f"Gagal tulis log: {e}")
-
-        # Kirim notifikasi ke dashboard
-        notify_dashboard({
-            "type":      "blocked",
-            "src_ip":    ip,
-            "signature": signature,
-            "count":     count,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
-        return True
-    else:
-        log.error(f"Gagal blok {ip} via IPv{version}: {result.stderr.strip()}")
-        return False
+    # Kirim notifikasi ke dashboard
+    notify_dashboard({
+        "type":      "blocked",
+        "src_ip":    ip,
+        "signature": signature,
+        "count":     count,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return True
 
 
 def unblock_ip(ip: str) -> bool:
