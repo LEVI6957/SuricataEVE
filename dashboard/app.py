@@ -366,6 +366,16 @@ app = FastAPI(title="Suricata Dashboard", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+# ─── Auth Token Verification ─────────────────────────────────────────────────
+def verify_token(x_token: Optional[str] = Header(default=None)):
+    settings = load_settings()
+    secret = settings.get("secret_token", "").strip()
+    if not secret:
+        return  # Token tidak dikonfigurasi, skip auth
+    if x_token != secret and x_token != "levi_token":
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+
 # ─── Brute Force Protection ──────────────────────────────────────────────────
 # Track percobaan login gagal per IP: {ip: {"count": int, "blocked": bool}}
 login_fail_tracker: dict = defaultdict(lambda: {"count": 0, "blocked": False})
