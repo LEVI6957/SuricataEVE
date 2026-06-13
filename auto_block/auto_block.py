@@ -115,7 +115,11 @@ def load_state():
             return  # Tidak ada perubahan
 
         with open(STATE_FILE, "r") as f:
-            data = json.load(f)
+            content = f.read().strip()
+            if not content:
+                last_state_mtime = mtime
+                return
+            data = json.loads(content)
 
         disk_counts  = data.get("alert_counts", {})
         disk_blocked = set(data.get("blocked_ips", []))
@@ -130,6 +134,7 @@ def load_state():
         log.info(f"State reload dari disk: {len(blocked_ips)} IP diblok")
 
     except Exception as e:
+        last_state_mtime = os.path.getmtime(STATE_FILE)  # Cegah infinite loop percobaan baca
         log.warning(f"Gagal load state: {e}")
 
 
@@ -169,12 +174,19 @@ def notify_dashboard(payload: dict):
 def run_ipt(args: list, ip_version: int = 4, check: bool = False) -> subprocess.CompletedProcess:
     """Jalankan perintah iptables atau ip6tables berdasarkan versi IP."""
     cmd = "iptables" if ip_version == 4 else "ip6tables"
-    return subprocess.run(
-        [cmd] + args,
-        capture_output=True,
-        text=True,
-        check=check,
-    )
+    try:
+        return subprocess.run(
+            [cmd] + args,
+            capture_output=True,
+            text=True,
+            check=check,
+        )
+    except Exception as e:
+        class DummyRet:
+            returncode = 99
+            stderr = str(e)
+            stdout = ""
+        return DummyRet()
 
 
 def is_iptables_available() -> bool:
@@ -394,17 +406,9 @@ def main():
             f"hit {count}/{current_threshold} | {signature}"
         )
 
-        # Kirim alert ke dashboard
-        notify_dashboard({
-            "type":      "alert",
-            "src_ip":    src_ip,
-            "signature": signature,
-            "category":  category,
-            "severity":  severity,
-            "count":     count,
-            "threshold": current_threshold,
-            "timestamp": event.get("timestamp", datetime.now(timezone.utc).isoformat()),
-        })
+        # Dashboard (app.py) akan mengambil alert langsung dari eve.json.
+        # Pengiriman notify_dashboard bertipe "alert" dihapus karena membuang-buang HTTP connection pool
+        # yang bisa menjadi bottleneck performa saat terjadi serangan DDoS besar-besaran.
 
         # Blok jika threshold tercapai
         if count >= current_threshold and src_ip not in blocked_ips:
