@@ -90,6 +90,15 @@ services:
     depends_on:
       - suricata
 
+  dummy_web:
+    image: nginx:alpine
+    container_name: dummy_web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./dummy_web:/usr/share/nginx/html:ro
+
 volumes:
   suricata-rules:
   suricata-config:

@@ -17,7 +17,7 @@ BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 # ── Konfigurasi ───────────────────────────────────────────────────────────────
 # Jika IP Ubuntu Server Anda berubah, edit IP di bawah ini!
 TARGET_IP="192.168.216.128"
-TARGET_PORT="8080"
+TARGET_PORT="80"
 TARGET="http://${TARGET_IP}:${TARGET_PORT}"
 
 # Deteksi interface jaringan utama secara otomatis
