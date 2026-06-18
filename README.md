@@ -3,7 +3,7 @@
 Sistem deteksi & pemblokiran otomatis berbasis **Suricata IDS**, dilengkapi web dashboard real-time.  
 Setiap IP penyerang yang memicu alert melebihi threshold akan **otomatis diblokir via iptables**.
 
-> 🎓 Proyek ini dibuat sebagai implementasi nyata sistem keamanan jaringan berbasis open-source untuk keperluan penelitian dan tugas akhir (skripsi).
+>  Proyek ini dibuat sebagai implementasi nyata sistem keamanan jaringan berbasis open-source untuk keperluan penelitian.
 
 ---
 
