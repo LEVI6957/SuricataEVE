@@ -129,7 +129,8 @@ def _format_discord_payload(payload: dict) -> dict:
     }
 
     if ip and ip != "N/A":
-        embed["fields"].append({"name": "IP Penyerang", "value": f"`{ip}`", "inline": True})
+        ip_label = "IP Penyerang" if event in ["BLOCKED", "HIGH_ALERT"] else "Alamat IP"
+        embed["fields"].append({"name": ip_label, "value": f"`{ip}`", "inline": True})
     if sig and sig != "N/A":
         embed["fields"].append({"name": "Signature", "value": sig[:256], "inline": False})
     if sev and sev != "N/A":
