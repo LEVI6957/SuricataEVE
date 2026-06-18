@@ -81,8 +81,14 @@ read -rp "$(echo -e ${YELLOW}[?]${NC}) Lanjut? (y/N): " confirm
 
 # ── Langkah 1: Buat IP Virtual ────────────────────────────────────────────────
 header "1. Membuat IP Virtual"
+
+# Siapkan file attackers.txt kosong
+> attackers.txt
+info "Mencatat IP penyerang ke attackers.txt"
+
 for i in $(seq $IP_START $((IP_START + IP_COUNT - 1))); do
     ip addr add "${IP_BASE}.${i}/24" dev "$IFACE" 2>/dev/null
+    echo "${IP_BASE}.${i}" >> attackers.txt
     success "IP virtual dibuat: ${IP_BASE}.${i}"
 done
 
@@ -153,6 +159,21 @@ done
 
 # ── Ringkasan ─────────────────────────────────────────────────────────────────
 header "✅ Simulasi Selesai!"
+
+# Menghasilkan attack_metadata.json (Ground Truth Audit Trail)
+info "Menyimpan attack_metadata.json..."
+cat <<EOF > attack_metadata.json
+{
+  "test_date": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+  "attack_type": "Log4Shell via 20 HTTP Headers",
+  "total_attackers": ${IP_COUNT},
+  "target_ip": "${TARGET_IP}",
+  "suricataeve_version": "1.0",
+  "suricata_version": "7.0.x"
+}
+EOF
+success "Metadata eksperimen disimpan!"
+
 echo -e "  ${BOLD}${IP_COUNT} serangan${NC} dari ${BOLD}${IP_COUNT} IP berbeda${NC} telah diluncurkan!"
 echo ""
 echo -e "  ${GREEN}➜${NC} Buka Dasbor: ${BOLD}http://${TARGET_IP}:${TARGET_PORT}${NC}"
