@@ -176,9 +176,7 @@ MIT License — lihat file [LICENSE](LICENSE)
 
 ---
 
-## Author / Kontributor
- 
- **Fernandi Lucky Putra** — Peneliti & Penulis Skripsi Utama  
- **Levi** — [@LEVI6957](https://github.com/LEVI6957) (Co-Developer)
- 
- Dikembangkan sebagai proyek penelitian skripsi Sistem Keamanan Jaringan berbasis open-source. Mengabdi untuk membanggakan orang tua dan memajukan keamanan siber negara Indonesia! 🇮🇩
+## Author
+
+**Levi** — [@LEVI6957](https://github.com/LEVI6957)  
+Dikembangkan sebagai proyek sistem keamanan jaringan berbasis open-source.
