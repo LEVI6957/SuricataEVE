@@ -225,7 +225,7 @@ def main():
 
     # B. Accuracy Chart
     plt.figure(figsize=(6, 4))
-    sns.barplot(x=['Total Attackers', 'Detected (TP)', 'Missed (FN)'], y=[len(attackers), tp, fn], palette=['gray', 'green', 'red'])
+    sns.barplot(x=['Total Attackers', 'Detected (TP)', 'Missed (FN)'], y=[len(attackers), tp, fn], hue=['Total Attackers', 'Detected (TP)', 'Missed (FN)'], palette=['gray', 'green', 'red'], legend=False)
     plt.title('Detection Performance')
     plt.ylabel('Count')
     plt.tight_layout()
