@@ -92,13 +92,13 @@ services:
       - suricata
 
   dummy_web:
-    image: nginx:alpine
+    image: php:7.4-apache
     container_name: dummy_web
     restart: unless-stopped
     ports:
       - "80:80"
     volumes:
-      - ./dummy_web:/usr/share/nginx/html:ro
+      - ./dummy_web:/var/www/html
 
 volumes:
   suricata-rules:
