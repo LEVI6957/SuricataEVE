@@ -19,6 +19,10 @@ iptables -F SURICATA_BLOCK 2>/dev/null
 # Flush chain IPv6 (opsional, jika ada)
 ip6tables -F SURICATA_BLOCK 2>/dev/null
 
+echo -e "${GREEN}[*]${NC} Mematikan Container Sementara..."
+# Kita matikan dulu agar skrip Python tidak melakukan "save_state()" saat di-restart
+docker compose stop
+
 echo -e "${GREEN}[*]${NC} Menghapus Log Suricata (eve.json)..."
 > ./logs/eve.json
 
@@ -29,12 +33,11 @@ echo -e "${GREEN}[*]${NC} Mereset Memori Skrip (alert_counts.json)..."
 echo '{"alert_counts": {}, "blocked_ips": []}' > ./auto_block/alert_counts.json
 
 echo -e "${GREEN}[*]${NC} Menghapus Database EveBox (Histori Web UI)..."
-# Menghapus database SQLite EveBox di dalam container
-docker exec evebox_ui rm -f /var/lib/evebox/events.sqlite 2>/dev/null || true
+# Menggunakan run --rm untuk hapus db saat evebox mati
+docker compose run --rm --entrypoint "rm -f /var/lib/evebox/events.sqlite" evebox || true
 
-echo -e "${GREEN}[*]${NC} Merestart Sistem (Docker Containers)..."
-# Restart agar auto_block.py, dashboard, dan evebox membaca file log & db yang kosong (fresh)
-docker compose restart
+echo -e "${GREEN}[*]${NC} Menyalakan Kembali Sistem..."
+docker compose start
 
 echo ""
 echo -e "${GREEN}[+] SELESAI!${NC} Sistem SuricataEVE telah di-reset seperti baru!"
