@@ -84,7 +84,11 @@ header "2. Skenario Pengujian: Brute Force (${IP_2})"
 attack "Melakukan simulasi Brute Force Login menggunakan Curl dari IP ${IP_2}..."
 # Menggunakan curl untuk brute force HTTP karena hydra susah set source IP secara spesifik tanpa config rumit
 for i in {1..20}; do
-    curl --interface "${IP_2}" -s -u "admin:salahpass$i" "$TARGET_URL" > /dev/null 2>&1
+    # Jika curl gagal/timeout karena iptables DROP, langsung stop loop
+    if ! curl --connect-timeout 1 -m 1 --interface "${IP_2}" -s -u "admin:salahpass$i" "$TARGET_URL" > /dev/null 2>&1; then
+        echo -e "\n${GREEN}[OK]${NC} Koneksi terputus! IP ${IP_2} telah berhasil diblokir oleh Firewall."
+        break
+    fi
     echo -ne "Mencoba password: salahpass$i dari ${IP_2}\r"
     sleep 0.2
 done
