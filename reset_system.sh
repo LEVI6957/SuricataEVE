@@ -28,8 +28,12 @@ echo -e "${GREEN}[*]${NC} Menghapus Log Pemblokiran (blocked_ips.log)..."
 echo -e "${GREEN}[*]${NC} Mereset Memori Skrip (alert_counts.json)..."
 echo '{"alert_counts": {}, "blocked_ips": []}' > ./auto_block/alert_counts.json
 
+echo -e "${GREEN}[*]${NC} Menghapus Database EveBox (Histori Web UI)..."
+# Menghapus database SQLite EveBox di dalam container
+docker exec evebox_ui rm -f /var/lib/evebox/events.sqlite 2>/dev/null || true
+
 echo -e "${GREEN}[*]${NC} Merestart Sistem (Docker Containers)..."
-# Restart agar auto_block.py dan dashboard membaca file log yang kosong (fresh)
+# Restart agar auto_block.py, dashboard, dan evebox membaca file log & db yang kosong (fresh)
 docker compose restart
 
 echo ""
