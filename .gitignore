@@ -50,3 +50,6 @@ C a t a t a n _ P e r i n t a h _ S u r i c a t a . t x t
  
 # Ignore PDFs (Skripsi)
 *.pdf  
+
+# Generated Explanation Docs
+Penjelasan_Sistem.html
