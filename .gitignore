@@ -46,7 +46,7 @@ Thumbs.db
 dashboard/settings.json
 dashboard/alert_counts.json
 dashboard/blocked_ips.log
-C a t a t a n _ P e r i n t a h _ S u r i c a t a . t x t  
+Catatan_Perintah_Suricata.txt
  
 # Ignore PDFs (Skripsi)
 *.pdf  
