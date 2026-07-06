@@ -264,4 +264,7 @@ Selain hal teknis, dosen sangat sering menanyakan keputusan arsitektur. Berikut 
 20. **"Apakah sistem ini bisa mendeteksi serangan *Zero-Day* (serangan baru yang belum pernah ada sebelumnya)?"**
     > **Jawaban:** "Sistem ini menggunakan *Signature-based detection*. Artinya, ia hebat mendeteksi serangan yang bentuk/polanya sudah diketahui. Namun untuk *Zero-Day* (belum ada *rule*-nya), kemungkinan tidak terdeteksi. Solusinya harus mengaktifkan mode *Anomaly-based detection* atau heuristik jika dibutuhkan, namun konsekuensinya butuh *resource server* yang jauh lebih tinggi."
 
+21. **"Mengapa dari script simulasi serangannya (attack_sim.sh) tidak terlihat pesan atau *output* dari web server?"**
+    > **Jawaban:** "Karena tujuan script tersebut hanyalah *Fire and Forget* (tembak dan lupakan) untuk menguji sensor IDS, bukan berfungsi sebagai *vulnerability scanner*. Skrip sengaja menyembunyikan balasan web (`-o /dev/null`) agar bisa menembakkan paket serangan dengan sangat cepat. Pembuktian sukses tidaknya serangan digagalkan harus dilihat dari log Suricata dan layar Dashboard kita, bukan dari terminal si penyerang."
+
 Semoga dokumen ini menjadi jimat sakti untuk kelancaran presentasi dan sidang Anda! Semangat! 🚀

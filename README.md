@@ -11,10 +11,10 @@ Setiap IP penyerang yang memicu alert melebihi threshold akan **otomatis dibloki
 
 | Service | Fungsi |
 |---|---|
-| **Suricata 8.x** | Network IDS — sniff traffic & tulis alert ke `eve.json` |
-| **EveBox** | UI viewer alert Suricata (analisis detail log) |
-| **auto_block** | Baca `eve.json` real-time, blok IP via **iptables** otomatis |
-| **dashboard** | Web UI: live feed alert, manage blocked IPs, webhook notifikasi |
+| **Suricata 8.x** | Network IDS — sniff traffic & tulis alert ke `eve.json`           |
+| **EveBox**       | UI viewer alert Suricata (analisis detail log)                    |
+| **auto_block**   | Baca `eve.json` real-time, blok IP via **iptables** otomatis      |
+| **dashboard**    | Web UI: live feed alert, manage blocked IPs, webhook notifikasi   |
 
 > Semua service berjalan via **Docker** — tidak perlu install Suricata secara manual.
 
@@ -109,7 +109,7 @@ Sistem secara otomatis mengaktifkan rule database berikut (±40.000+ rules):
 
 | Sumber | Spesialisasi |
 |---|---|
-| **ET Open** | 28.500+ rules umum (default) |
+| **ET Open**        | 28.500+ rules umum (default) |
 | **ptresearch/attackdetection** | Serangan web, exploit, APT |
 | **tgreen/hunting** | Threat hunting & anomali jaringan |
 | **sslbl/ssl-fp-blacklist** | SSL/TLS malware & botnet fingerprint |
