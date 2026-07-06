@@ -141,7 +141,7 @@ Dari mesin penyerang, jalankan:
 curl -o ~/attack_sim.sh https://raw.githubusercontent.com/LEVI6957/SuricataEVE/main/attack_sim.sh
 
 # Jalankan simulasi 20 IP penyerang berbeda dengan payload Log4Shell
-sudo bash ~/attack_sim.sh <IP_SERVER> 8080
+sudo bash ~/attack_sim.sh <IP_SERVER> 80
 ```
 
 ---
