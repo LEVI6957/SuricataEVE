@@ -41,4 +41,4 @@ docker compose start
 
 echo ""
 echo -e "${GREEN}[+] SELESAI!${NC} Sistem SuricataEVE telah di-reset seperti baru!"
-echo "Dashboard sekarang kosong, IPTables bersih, dan siap untuk pengujian BAB V."
+echo "Dashboard sekarang kosong, IPTables bersih, dan siap untuk pengujian."
