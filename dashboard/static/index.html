@@ -623,7 +623,10 @@
         /* ── Login Overlay ─────────────────── */
         #loginOverlay {
             position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             background: rgba(10, 14, 26, 0.95);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
@@ -711,7 +714,8 @@
                 <span id="ws-status"><span class="dot red" id="ws-dot"></span>Disconnected</span>
                 <span>⏱ Uptime: <b id="uptime-val">—</b></span>
                 <span>👥 Clients: <b id="clients-val">—</b></span>
-                <button class="btn btn-secondary btn-sm" onclick="handleLogout()" style="margin-left:1rem; border-color:var(--danger); color:var(--danger)">Logout</button>
+                <button class="btn btn-secondary btn-sm" onclick="handleLogout()"
+                    style="margin-left:1rem; border-color:var(--danger); color:var(--danger)">Logout</button>
             </div>
         </header>
 
@@ -834,13 +838,16 @@
                         <div class="field">
                             <label>Tambah IP ke Whitelist</label>
                             <div style="display:flex; gap:.5rem;">
-                                <input id="wl-ip-input" type="text" placeholder="Contoh: 192.168.1.10" style="flex:1;" />
+                                <input id="wl-ip-input" type="text" placeholder="Contoh: 192.168.1.10"
+                                    style="flex:1;" />
                                 <button class="btn btn-primary btn-sm" onclick="addWhitelist()">Tambah</button>
                             </div>
                         </div>
                         <div>
-                            <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;font-weight:600;">Daftar Whitelist</div>
-                            <div id="whitelist-list" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;min-height:100px;max-height:150px;overflow-y:auto;padding:.5rem;">
+                            <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;font-weight:600;">Daftar
+                                Whitelist</div>
+                            <div id="whitelist-list"
+                                style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;min-height:100px;max-height:150px;overflow-y:auto;padding:.5rem;">
                                 <div class="empty-state" style="padding:.75rem">Belum ada IP di Whitelist.</div>
                             </div>
                         </div>
@@ -1136,7 +1143,7 @@
             const ip = ipInput.value.trim();
             if (!ip) return;
             try {
-                const r = await fetch(`/api/whitelist/${encodeURIComponent(ip)}`, { 
+                const r = await fetch(`/api/whitelist/${encodeURIComponent(ip)}`, {
                     method: 'POST',
                     headers: getAuthHeaders()
                 });
@@ -1148,7 +1155,7 @@
         async function removeWhitelist(ip) {
             if (!confirm(`Hapus ${ip} dari whitelist?`)) return;
             try {
-                const r = await fetch(`/api/whitelist/${encodeURIComponent(ip)}`, { 
+                const r = await fetch(`/api/whitelist/${encodeURIComponent(ip)}`, {
                     method: 'DELETE',
                     headers: getAuthHeaders()
                 });
@@ -1163,11 +1170,11 @@
                 const r = await fetch('/api/settings', { headers: getAuthHeaders() });
                 if (!r.ok) return;
                 const s = await r.json();
-                if (s.webhook_url)      document.getElementById('wh-url').value      = s.webhook_url;
+                if (s.webhook_url) document.getElementById('wh-url').value = s.webhook_url;
                 if (s.webhook_headers && Object.keys(s.webhook_headers).length)
                     document.getElementById('wh-headers').value = JSON.stringify(s.webhook_headers, null, 2);
-                if (s.threshold)   document.getElementById('set-threshold').value = s.threshold;
-                if (s.severity)    document.getElementById('set-severity').value   = s.severity;
+                if (s.threshold) document.getElementById('set-threshold').value = s.threshold;
+                if (s.severity) document.getElementById('set-severity').value = s.severity;
             } catch (e) { }
         }
 
@@ -1178,8 +1185,8 @@
                 authToken = tokenInput;
             }
             const payload = {
-                threshold:    parseInt(document.getElementById('set-threshold').value),
-                severity:     parseInt(document.getElementById('set-severity').value),
+                threshold: parseInt(document.getElementById('set-threshold').value),
+                severity: parseInt(document.getElementById('set-severity').value),
                 secret_token: tokenInput,
             };
             try {
@@ -1205,7 +1212,7 @@
             const btn = document.getElementById('loginBtn');
             const u = document.getElementById('loginUser').value;
             const p = document.getElementById('loginPass').value;
-            
+
             btn.disabled = true;
             btn.textContent = "VERIFYING...";
 
@@ -1231,7 +1238,7 @@
                     btn.disabled = false;
                     btn.textContent = "ACCESS GRANTED";
                 }
-            } catch(e) {
+            } catch (e) {
                 alert("Connection Error.");
                 btn.disabled = false;
                 btn.textContent = "ACCESS GRANTED";
@@ -1245,7 +1252,7 @@
                         method: 'POST',
                         headers: { 'x-token': authToken }
                     });
-                } catch(e) { } // Abaikan error saat logout
+                } catch (e) { } // Abaikan error saat logout
             }
 
             localStorage.removeItem('levi_token');
@@ -1254,7 +1261,7 @@
             if (ws) { ws.onclose = null; ws.close(); ws = null; }
             // Hentikan polling
             if (window.pollInterval) { clearInterval(window.pollInterval); window.pollInterval = null; }
-            if (window.whInterval)   { clearInterval(window.whInterval);   window.whInterval   = null; }
+            if (window.whInterval) { clearInterval(window.whInterval); window.whInterval = null; }
             document.getElementById('loginOverlay').style.visibility = 'visible';
             document.getElementById('loginOverlay').style.opacity = '1';
             document.getElementById('loginUser').value = '';
