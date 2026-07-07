@@ -23,12 +23,12 @@ fi
 # Ambil IP address dari interface tersebut (IP asli Kali)
 KALI_IP=$(ip -o -4 addr show dev "$IFACE" | awk '{print $4}' | cut -d/ -f1 | head -n1)
 
-# !! PENTING: Gunakan subnet BERBEDA dari jaringan lokal !!
-# Agar Suricata mendeteksi sebagai EXTERNAL_NET
-IP_BASE="10.66.66"
+# Gunakan subnet yang SAMA dengan target agar paket bisa dirouting otomatis
+# dan sampai ke web server tanpa routing tambahan.
+IP_BASE="192.168.216"
 
 # Range IP virtual yang akan dibuat
-IP_START=50
+IP_START=100
 IP_COUNT=50
 DELAY=0.1
 
@@ -59,8 +59,6 @@ echo -e "  Target    : ${BOLD}${TARGET}${NC}"
 echo -e "  Interface : ${BOLD}${IFACE}${NC}"
 echo -e "  IP Range  : ${BOLD}${IP_BASE}.${IP_START} - ${IP_BASE}.$((IP_START + IP_COUNT - 1))${NC}"
 echo ""
-warn "PASTIKAN SUDAH JALANKAN INI DI UBUNTU SERVER:"
-echo -e "  ${BOLD}sudo ip route add ${IP_BASE}.0/24 via ${KALI_IP}${NC}"
 echo ""
 read -rp "$(echo -e ${YELLOW}[?]${NC}) Lanjut? (y/N): " confirm
 [[ "${confirm,,}" != "y" ]] && echo "Dibatalkan." && exit 0
