@@ -53,8 +53,6 @@ ws_clients: list[WebSocket] = []
 webhook_log: deque = deque(maxlen=50)
 
 # Data untuk grafik: aktivitas per jam (24 jam terakhir) dan per kategori serangan
-hourly_activity: dict = defaultdict(int)   # key: "HH" (jam), value: count
-category_counts: dict = defaultdict(int)   # key: kategori/signature, value: count
 
 
 # ─── Settings Helper ──────────────────────────────────────────────────────────
@@ -331,13 +329,7 @@ async def tail_eve():
             alert_counts[src_ip] += 1
             count = alert_counts[src_ip]
 
-            # Update data grafik
-            hour_key = datetime.now().strftime("%H")
-            hourly_activity[hour_key] += 1
-            # Gunakan kategori sebagai label grafik, fallback ke 5 kata pertama signature
-            cat_key = category if category and category != "N/A" else " ".join(signature.split()[:5])
-            category_counts[cat_key] += 1
-
+            
             alert_payload = {
                 "type":      "alert",
                 "src_ip":    src_ip,
@@ -630,37 +622,6 @@ async def get_alerts(limit: int = 100):
     return list(recent_alerts)[:limit]
 
 
-@app.get("/api/chart-data")
-async def get_chart_data():
-    """Data untuk grafik: aktivitas per jam (24 jam) dan top kategori serangan."""
-    # Buat array 24 jam lengkap, isi 0 untuk jam yang belum ada data
-    hours_labels = [f"{h:02d}:00" for h in range(24)]
-    hours_data   = [hourly_activity.get(f"{h:02d}", 0) for h in range(24)]
-
-    # Top 6 kategori serangan terbanyak
-    top_cats = sorted(category_counts.items(), key=lambda x: x[1], reverse=True)[:6]
-    cat_labels = [c[0] for c in top_cats]
-    cat_data   = [c[1] for c in top_cats]
-
-    return {
-        "hourly": {"labels": hours_labels, "data": hours_data},
-        "categories": {"labels": cat_labels, "data": cat_data},
-    }
-
-
-@app.get("/api/server-info")
-async def get_server_info():
-    """Informasi server: IP aktif untuk ditampilkan di header dashboard."""
-    import socket
-    try:
-        # Deteksi IP server yang digunakan untuk routing keluar
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        server_ip = s.getsockname()[0]
-        s.close()
-    except Exception:
-        server_ip = "127.0.0.1"
-    return {"server_ip": server_ip, "port": 8080}
 
 
 @app.get("/api/settings")
