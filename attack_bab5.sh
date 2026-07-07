@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # =============================================================================
 #  attack_bab5.sh — Simulasi Serangan untuk Skripsi BAB V (SuricataEVE)
 #  Skenario menggunakan 3 IP Virtual berbeda:
@@ -15,8 +15,8 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # --- KONFIGURASI TARGET ---
-TARGET_IP="192.168.238.128" # GANTI DENGAN IP TARGET ANDA
-TARGET_PORT="8080"
+TARGET_IP="192.168.216.128" # GANTI DENGAN IP TARGET ANDA
+TARGET_PORT="80"
 TARGET_URL="http://${TARGET_IP}:${TARGET_PORT}"
 
 info()    { echo -e "${GREEN}[INFO]${NC}  $*"; }
