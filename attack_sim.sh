@@ -17,7 +17,7 @@ BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 # ── Konfigurasi ───────────────────────────────────────────────────────────────
 # Jika IP Ubuntu Server Anda berubah, edit IP di bawah ini!
 TARGET_IP="192.168.216.128"
-TARGET_PORT="80"
+TARGET_PORT="8080"
 TARGET="http://${TARGET_IP}:${TARGET_PORT}"
 
 # Deteksi interface jaringan utama secara otomatis
@@ -26,16 +26,13 @@ if [[ -z "$IFACE" ]]; then
     IFACE="eth0"
 fi
 
-# Ambil IP address dari interface tersebut
-KALI_IP=$(ip -o -4 addr show dev "$IFACE" | awk '{print $4}' | cut -d/ -f1)
+# Ambil IP address dari interface tersebut (IP asli Kali)
+KALI_IP=$(ip -o -4 addr show dev "$IFACE" | awk '{print $4}' | cut -d/ -f1 | head -n1)
 
-# Buat base IP berdasarkan 3 oktet pertama dari IP Kali
-# (Contoh: jika IP Kali 170.2.50.10 -> IP_BASE=170.2.50)
-IP_BASE=$(echo "$KALI_IP" | cut -d. -f1,2,3)
-
-if [[ -z "$IP_BASE" ]]; then
-    IP_BASE="192.168.1" # Fallback
-fi
+# !! PENTING: Gunakan subnet BERBEDA dari jaringan lokal !!
+# Agar Suricata mendeteksi sebagai EXTERNAL_NET (bukan HOME_NET)
+# 10.66.66.x pasti bukan bagian dari 192.168.x.x lokal
+IP_BASE="10.66.66"
 
 # Range IP virtual yang akan dibuat (Contoh: 170.2.50.50 - 170.2.50.99)
 IP_START=50
@@ -60,6 +57,8 @@ header()  { echo -e "\n${BOLD}${BLUE}══════════════�
 cleanup() {
     echo ""
     warn "Membersihkan IP virtual..."
+    # Hapus route ke subnet 10.66.66.0/24 jika ada
+    ip route del "${IP_BASE}.0/24" dev "$IFACE" 2>/dev/null || true
     for i in $(seq $IP_START $((IP_START + IP_COUNT - 1))); do
         ip addr del "${IP_BASE}.${i}/24" dev "$IFACE" 2>/dev/null
     done
@@ -91,6 +90,11 @@ for i in $(seq $IP_START $((IP_START + IP_COUNT - 1))); do
     echo "${IP_BASE}.${i}" >> attackers.txt
     success "IP virtual dibuat: ${IP_BASE}.${i}"
 done
+
+# Tambahkan route agar paket dari 10.66.66.x bisa dikirim ke TARGET_IP
+# (Ubuntu Server perlu tahu bahwa 10.66.66.x bisa dijangkau via Kali)
+info "Menambahkan route 10.66.66.0/24 ke interface ${IFACE}..."
+ip route add "${IP_BASE}.0/24" dev "$IFACE" 2>/dev/null || true
 
 # Tunggu sebentar agar routing stabil
 sleep 1
