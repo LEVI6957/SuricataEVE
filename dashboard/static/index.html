@@ -9,6 +9,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         :root {
             --bg: #0a0e1a;
@@ -688,6 +689,52 @@
             transform: translateY(-2px);
             box-shadow: 0 0 30px rgba(99, 102, 241, 0.3);
         }
+
+        /* ── Server IP Badge ─────────────────── */
+        .server-ip-badge {
+            display: flex;
+            align-items: center;
+            gap: .4rem;
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 8px;
+            padding: .25rem .7rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .75rem;
+            color: var(--success);
+        }
+
+        /* ── Chart Panel ─────────────────── */
+        .chart-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        @media (max-width: 900px) {
+            .chart-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-container {
+            padding: 1.25rem;
+            position: relative;
+        }
+
+        .chart-container canvas {
+            max-height: 220px;
+        }
+
+        .chart-empty {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 180px;
+            color: var(--muted);
+            font-size: .85rem;
+        }
     </style>
 </head>
 
@@ -714,8 +761,9 @@
                 <span id="ws-status"><span class="dot red" id="ws-dot"></span>Disconnected</span>
                 <span>⏱ Uptime: <b id="uptime-val">—</b></span>
                 <span>👥 Clients: <b id="clients-val">—</b></span>
+                <div class="server-ip-badge" title="IP Server Aktif">🖥 <span id="server-ip-display">—</span></div>
                 <button class="btn btn-secondary btn-sm" onclick="handleLogout()"
-                    style="margin-left:1rem; border-color:var(--danger); color:var(--danger)">Logout</button>
+                    style="margin-left:.5rem; border-color:var(--danger); color:var(--danger)">Logout</button>
             </div>
         </header>
 
@@ -854,6 +902,32 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Chart Row -->
+            <div class="chart-row">
+                <!-- Grafik Aktivitas Per Jam -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">📊 Aktivitas Serangan Per Jam</div>
+                        <span style="font-size:.75rem;color:var(--muted)">Auto-refresh 10s</span>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="chartHourly"></canvas>
+                        <div class="chart-empty" id="chartHourlyEmpty">Menunggu data serangan...</div>
+                    </div>
+                </div>
+
+                <!-- Grafik Top Kategori Serangan -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">🥧 Top Jenis Serangan</div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="chartCategory"></canvas>
+                        <div class="chart-empty" id="chartCategoryEmpty">Menunggu data serangan...</div>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
@@ -864,6 +938,8 @@
         let feedCount = 0;
         let ws = null;
         let authToken = '';
+        let chartHourly = null;
+        let chartCategory = null;
 
         // ── Toast ──────────────────────────────────
         function toast(msg, type = 'success') {
@@ -1282,6 +1358,111 @@
             }
         }
 
+        // ── Server IP ─────────────────────────────
+        async function loadServerInfo() {
+            try {
+                const r = await fetch('/api/server-info');
+                if (!r.ok) return;
+                const d = await r.json();
+                document.getElementById('server-ip-display').textContent = d.server_ip + ':' + d.port;
+            } catch (e) {}
+        }
+
+        // ── Charts ────────────────────────────────
+        const CHART_COLORS = [
+            'rgba(99,102,241,0.8)', 'rgba(239,68,68,0.8)', 'rgba(245,158,11,0.8)',
+            'rgba(16,185,129,0.8)', 'rgba(59,130,246,0.8)', 'rgba(168,85,247,0.8)'
+        ];
+        const CHART_BORDERS = [
+            'rgba(99,102,241,1)', 'rgba(239,68,68,1)', 'rgba(245,158,11,1)',
+            'rgba(16,185,129,1)', 'rgba(59,130,246,1)', 'rgba(168,85,247,1)'
+        ];
+
+        function initCharts() {
+            Chart.defaults.color = '#64748b';
+            Chart.defaults.font.family = 'Inter, sans-serif';
+
+            // Bar chart — aktivitas per jam
+            const ctxH = document.getElementById('chartHourly').getContext('2d');
+            chartHourly = new Chart(ctxH, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Jumlah Alert',
+                        data: [],
+                        backgroundColor: 'rgba(99,102,241,0.4)',
+                        borderColor: 'rgba(99,102,241,1)',
+                        borderWidth: 1,
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { color: 'rgba(255,255,255,0.04)' } },
+                        y: { grid: { color: 'rgba(255,255,255,0.04)' }, beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                }
+            });
+
+            // Doughnut chart — top kategori serangan
+            const ctxC = document.getElementById('chartCategory').getContext('2d');
+            chartCategory = new Chart(ctxC, {
+                type: 'doughnut',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        data: [],
+                        backgroundColor: CHART_COLORS,
+                        borderColor: CHART_BORDERS,
+                        borderWidth: 1,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { font: { size: 10 }, boxWidth: 12, padding: 8 }
+                        }
+                    },
+                    cutout: '60%',
+                }
+            });
+        }
+
+        async function refreshCharts() {
+            try {
+                const r = await fetch('/api/chart-data');
+                if (!r.ok) return;
+                const d = await r.json();
+
+                // Update hourly chart
+                const hasHourlyData = d.hourly.data.some(v => v > 0);
+                document.getElementById('chartHourly').style.display = hasHourlyData ? 'block' : 'none';
+                document.getElementById('chartHourlyEmpty').style.display = hasHourlyData ? 'none' : 'flex';
+                if (hasHourlyData) {
+                    chartHourly.data.labels = d.hourly.labels;
+                    chartHourly.data.datasets[0].data = d.hourly.data;
+                    chartHourly.update('none');
+                }
+
+                // Update category chart
+                const hasCatData = d.categories.data.length > 0;
+                document.getElementById('chartCategory').style.display = hasCatData ? 'block' : 'none';
+                document.getElementById('chartCategoryEmpty').style.display = hasCatData ? 'none' : 'flex';
+                if (hasCatData) {
+                    chartCategory.data.labels = d.categories.labels;
+                    chartCategory.data.datasets[0].data = d.categories.data;
+                    chartCategory.update('none');
+                }
+            } catch (e) {}
+        }
+
         // ── Init ──────────────────────────────────
         function initApp() {
             connectWS();
@@ -1289,10 +1470,14 @@
             loadSettings();
             refreshWebhookLog();
             loadWhitelist();
+            loadServerInfo();
             pollStats();
+            initCharts();
+            refreshCharts();
             if (!window.pollInterval) {
                 window.pollInterval = setInterval(pollStats, 2000);
                 window.whInterval = setInterval(refreshWebhookLog, 15000);
+                window.chartInterval = setInterval(refreshCharts, 10000);
             }
         }
 
