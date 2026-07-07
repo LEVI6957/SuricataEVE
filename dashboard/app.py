@@ -52,8 +52,6 @@ stats = {"total_alerts": 0, "total_blocked": 0, "start_time": time.time()}
 ws_clients: list[WebSocket] = []
 webhook_log: deque = deque(maxlen=50)
 
-# Data untuk grafik: aktivitas per jam (24 jam terakhir) dan per kategori serangan
-
 
 # ─── Settings Helper ──────────────────────────────────────────────────────────
 def load_settings() -> dict:
@@ -329,7 +327,6 @@ async def tail_eve():
             alert_counts[src_ip] += 1
             count = alert_counts[src_ip]
 
-            
             alert_payload = {
                 "type":      "alert",
                 "src_ip":    src_ip,
@@ -620,8 +617,6 @@ async def unblock_ip_endpoint(ip: str, _=Depends(verify_token)):
 @app.get("/api/alerts")
 async def get_alerts(limit: int = 100):
     return list(recent_alerts)[:limit]
-
-
 
 
 @app.get("/api/settings")
