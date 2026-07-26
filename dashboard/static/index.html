@@ -9,6 +9,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         :root {
             --bg: #0a0e1a;
@@ -688,6 +689,134 @@
             transform: translateY(-2px);
             box-shadow: 0 0 30px rgba(99, 102, 241, 0.3);
         }
+
+        /* ── Chart Section ─────────────────── */
+        .chart-section {
+            margin-top: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .chart-section-title {
+            font-size: .8rem;
+            font-weight: 600;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            margin-bottom: .85rem;
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+        }
+
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 260px 1fr 1fr;
+            gap: 1.25rem;
+        }
+
+        @media (max-width: 1100px) {
+            .chart-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 700px) {
+            .chart-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            transition: box-shadow .2s;
+        }
+
+        .chart-card:hover {
+            box-shadow: var(--glow);
+        }
+
+        .chart-card-header {
+            padding: .9rem 1.25rem .5rem;
+            border-bottom: 1px solid var(--border);
+            background: rgba(255,255,255,.02);
+        }
+
+        .chart-card-title {
+            font-weight: 600;
+            font-size: .88rem;
+            margin-bottom: .1rem;
+        }
+
+        .chart-card-sub {
+            font-size: .72rem;
+            color: var(--muted);
+        }
+
+        .chart-card-body {
+            padding: 1rem 1.25rem 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .chart-donut-wrap {
+            position: relative;
+            width: 180px;
+            height: 180px;
+        }
+
+        .chart-donut-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .chart-donut-center .big {
+            font-size: 1.6rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .chart-donut-center .small {
+            font-size: .65rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+        }
+
+        .chart-legend {
+            display: flex;
+            flex-direction: column;
+            gap: .5rem;
+            margin-left: 1rem;
+        }
+
+        .chart-legend-item {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            font-size: .78rem;
+        }
+
+        .chart-legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .chart-legend-val {
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            margin-left: auto;
+            padding-left: .75rem;
+        }
     </style>
 </head>
 
@@ -766,6 +895,70 @@
                     <div id="blocked-list">
                         <div class="empty-state">Belum ada IP yang diblok.</div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Chart Section -->
+            <div class="chart-section">
+                <div class="chart-section-title">📊 Statistik &amp; Grafik Real-Time</div>
+                <div class="chart-grid">
+
+                    <!-- Donut: Status IP -->
+                    <div class="chart-card">
+                        <div class="chart-card-header">
+                            <div class="chart-card-title">🍩 Status IP</div>
+                            <div class="chart-card-sub">Distribusi IP diblok vs aman</div>
+                        </div>
+                        <div class="chart-card-body" style="flex-direction:row; align-items:center;">
+                            <div class="chart-donut-wrap">
+                                <canvas id="chartDonut"></canvas>
+                                <div class="chart-donut-center">
+                                    <div class="big" id="donut-total">0</div>
+                                    <div class="small">Total IP</div>
+                                </div>
+                            </div>
+                            <div class="chart-legend">
+                                <div class="chart-legend-item">
+                                    <span class="chart-legend-dot" style="background:#ef4444"></span>
+                                    <span>Diblok</span>
+                                    <span class="chart-legend-val" id="legend-blocked" style="color:#ef4444">0</span>
+                                </div>
+                                <div class="chart-legend-item">
+                                    <span class="chart-legend-dot" style="background:#10b981"></span>
+                                    <span>Aman</span>
+                                    <span class="chart-legend-val" id="legend-allowed" style="color:#10b981">0</span>
+                                </div>
+                                <div class="chart-legend-item" style="margin-top:.25rem; border-top:1px solid var(--border); padding-top:.5rem">
+                                    <span class="chart-legend-dot" style="background:#f59e0b"></span>
+                                    <span>Total Alert</span>
+                                    <span class="chart-legend-val" id="legend-alerts" style="color:#f59e0b">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bar: Top 10 IP Penyerang -->
+                    <div class="chart-card">
+                        <div class="chart-card-header">
+                            <div class="chart-card-title">🎯 Top 10 IP Penyerang</div>
+                            <div class="chart-card-sub">Berdasarkan jumlah alert yang ditrigger</div>
+                        </div>
+                        <div class="chart-card-body" style="height:220px; padding:.75rem 1rem;">
+                            <canvas id="chartBar"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Line: Alert per Menit -->
+                    <div class="chart-card">
+                        <div class="chart-card-header">
+                            <div class="chart-card-title">📈 Alert per Menit</div>
+                            <div class="chart-card-sub">Tren alert masuk real-time (30 menit terakhir)</div>
+                        </div>
+                        <div class="chart-card-body" style="height:220px; padding:.75rem 1rem;">
+                            <canvas id="chartLine"></canvas>
+                        </div>
+                    </div>
+
                 </div>
             </div>
 
@@ -903,6 +1096,8 @@
         function handleEvent(ev) {
             if (ev.type === 'alert' || ev.type === 'blocked') {
                 prependAlert(ev);
+                // Tambah satu titik ke line chart
+                if (typeof incrementLineChart === 'function') incrementLineChart();
             }
             if (ev.type === 'blocked') {
                 prependBlockedRow(ev);
@@ -1049,13 +1244,22 @@
                 const h = Math.floor(s.uptime_seconds / 3600);
                 const m = Math.floor((s.uptime_seconds % 3600) / 60);
                 document.getElementById('uptime-val').textContent = `${h}h ${m}m`;
+
+                // Update grafik
+                updateCharts(s);
             } catch (e) { }
 
-            // Update whitelist count secara terpisah
+            // Update whitelist count + blocked set untuk pewarnaan bar
             try {
                 const rw = await fetch('/api/whitelist');
                 const wl = await rw.json();
                 document.getElementById('stat-whitelist').textContent = wl.length;
+            } catch (e) { }
+
+            try {
+                const rb = await fetch('/api/blocked');
+                const bl = await rb.json();
+                window._blockedIPSet = new Set(bl.map(b => b.ip));
             } catch (e) { }
         }
 
@@ -1282,8 +1486,229 @@
             }
         }
 
+        // ── Charts ────────────────────────────────
+        let chartDonut = null;
+        let chartBar   = null;
+        let chartLine  = null;
+
+        // Simpan data time-series alert per menit
+        const alertTimeline = { labels: [], data: [] };
+        let alertsThisMinute = 0;
+        let currentMinuteKey = '';
+
+        const CHART_DEFAULTS = {
+            color: '#e2e8f0',
+            borderColor: 'rgba(255,255,255,0.07)',
+            font: { family: 'Inter, sans-serif', size: 11 },
+        };
+
+        function initCharts() {
+            Chart.defaults.color = CHART_DEFAULTS.color;
+            Chart.defaults.borderColor = CHART_DEFAULTS.borderColor;
+            Chart.defaults.font.family = CHART_DEFAULTS.font.family;
+            Chart.defaults.font.size = CHART_DEFAULTS.font.size;
+
+            // ─── Donut Chart ───────────────────────────────────────────────
+            const ctxDonut = document.getElementById('chartDonut').getContext('2d');
+            chartDonut = new Chart(ctxDonut, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Diblok', 'Aman'],
+                    datasets: [{
+                        data: [0, 0],
+                        backgroundColor: ['rgba(239,68,68,0.85)', 'rgba(16,185,129,0.85)'],
+                        borderColor:     ['#ef4444', '#10b981'],
+                        borderWidth: 2,
+                        hoverOffset: 6,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    cutout: '68%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ` ${ctx.label}: ${ctx.parsed} IP`
+                            }
+                        }
+                    },
+                    animation: { duration: 400 },
+                }
+            });
+
+            // ─── Bar Chart ─────────────────────────────────────────────────
+            const ctxBar = document.getElementById('chartBar').getContext('2d');
+            chartBar = new Chart(ctxBar, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Hit Count',
+                        data: [],
+                        backgroundColor: (ctx) => {
+                            // IP yang diblok: merah terang, sisanya: merah redup
+                            return 'rgba(239,68,68,0.7)';
+                        },
+                        borderColor: '#ef4444',
+                        borderWidth: 1,
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ` ${ctx.parsed.x} hit`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.04)' },
+                            ticks: { color: '#64748b' },
+                            beginAtZero: true,
+                        },
+                        y: {
+                            grid: { display: false },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: { family: 'JetBrains Mono, monospace', size: 10 },
+                            }
+                        }
+                    },
+                    animation: { duration: 400 },
+                }
+            });
+
+            // ─── Line Chart ────────────────────────────────────────────────
+            const ctxLine = document.getElementById('chartLine').getContext('2d');
+            chartLine = new Chart(ctxLine, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Alert/menit',
+                        data: [],
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245,158,11,0.08)',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        pointBackgroundColor: '#f59e0b',
+                        fill: true,
+                        tension: 0.4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ` ${ctx.parsed.y} alert`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.04)' },
+                            ticks: { color: '#64748b', maxTicksLimit: 6 },
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.04)' },
+                            ticks: { color: '#64748b', precision: 0 },
+                            beginAtZero: true,
+                        }
+                    },
+                    animation: { duration: 300 },
+                }
+            });
+
+            // Seed timeline dengan menit saat ini
+            tickAlertMinute();
+        }
+
+        function tickAlertMinute() {
+            // Panggil setiap menit untuk menambah titik baru ke Line Chart
+            const now = new Date();
+            const key = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+
+            if (key !== currentMinuteKey) {
+                // Simpan count menit sebelumnya jika sudah ada
+                if (currentMinuteKey) {
+                    alertTimeline.labels.push(currentMinuteKey);
+                    alertTimeline.data.push(alertsThisMinute);
+                    // Batasi 30 menit terakhir
+                    if (alertTimeline.labels.length > 30) {
+                        alertTimeline.labels.shift();
+                        alertTimeline.data.shift();
+                    }
+                }
+                currentMinuteKey = key;
+                alertsThisMinute = 0;
+
+                if (chartLine) {
+                    chartLine.data.labels = [...alertTimeline.labels, key];
+                    chartLine.data.datasets[0].data = [...alertTimeline.data, 0];
+                    chartLine.update('none');
+                }
+            }
+        }
+
+        function incrementLineChart() {
+            // Dipanggil setiap kali ada alert masuk dari WebSocket
+            tickAlertMinute();
+            alertsThisMinute++;
+            if (chartLine && chartLine.data.labels.length > 0) {
+                const lastIdx = chartLine.data.datasets[0].data.length - 1;
+                if (lastIdx >= 0) {
+                    chartLine.data.datasets[0].data[lastIdx] = alertsThisMinute;
+                    chartLine.update('none');
+                }
+            }
+        }
+
+        function updateCharts(stats) {
+            if (!chartDonut || !chartBar) return;
+
+            const blocked = stats.total_blocked || 0;
+            // "Aman" = IP unik yang pernah buat alert tapi belum diblok
+            const uniqueIPs = (stats.top_attackers || []).length;
+            const allowed  = Math.max(0, uniqueIPs - blocked);
+            const total    = blocked + allowed;
+
+            // ── Update Donut ───────────────────────────────────────────────
+            chartDonut.data.datasets[0].data = [blocked, allowed];
+            chartDonut.update();
+
+            document.getElementById('donut-total').textContent = total;
+            document.getElementById('legend-blocked').textContent = blocked;
+            document.getElementById('legend-allowed').textContent = allowed;
+            document.getElementById('legend-alerts').textContent = stats.total_alerts || 0;
+
+            // ── Update Bar ─────────────────────────────────────────────────
+            const top = (stats.top_attackers || []).slice(0, 10);
+            chartBar.data.labels = top.map(a => a.ip);
+            chartBar.data.datasets[0].data = top.map(a => a.count);
+            // Warna: merah gelap jika diblok, merah muda jika belum
+            chartBar.data.datasets[0].backgroundColor = top.map(a => {
+                // blocked IPs akan diambil dari blocked list
+                return window._blockedIPSet && window._blockedIPSet.has(a.ip)
+                    ? 'rgba(239,68,68,0.9)'
+                    : 'rgba(239,68,68,0.35)';
+            });
+            chartBar.update();
+        }
+
         // ── Init ──────────────────────────────────
         function initApp() {
+            initCharts();
             connectWS();
             refreshBlocked();
             loadSettings();
@@ -1292,7 +1717,8 @@
             pollStats();
             if (!window.pollInterval) {
                 window.pollInterval = setInterval(pollStats, 2000);
-                window.whInterval = setInterval(refreshWebhookLog, 15000);
+                window.whInterval   = setInterval(refreshWebhookLog, 15000);
+                window.lineInterval = setInterval(tickAlertMinute, 10000);
             }
         }
 
