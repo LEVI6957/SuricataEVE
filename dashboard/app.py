@@ -66,6 +66,7 @@ def load_settings() -> dict:
             "severity": 2,
             "interval": 10,
             "secret_token": "",
+            "telegram_chat_id": "",
         }
 
 
@@ -143,6 +144,41 @@ def _format_discord_payload(payload: dict) -> dict:
     return {"embeds": [embed]}
 
 
+def _format_telegram_payload(payload: dict, chat_id: str) -> dict:
+    """Format payload khusus untuk Telegram Bot API sendMessage."""
+    event = payload.get("event", "EVENT")
+    ip    = payload.get("ip", "")
+    sig   = payload.get("signature", "")
+    sev   = payload.get("severity", "")
+    msg   = payload.get("message", "")
+    ts    = payload.get("timestamp", datetime.now(timezone.utc).isoformat())
+
+    icon = {
+        "BLOCKED":          "🔒",
+        "HIGH_ALERT":       "⚠️",
+        "TEST":             "🧪",
+        "WHITELIST_ADD":    "✅",
+        "WHITELIST_REMOVE": "❌",
+        "UNBLOCKED":        "🔓",
+        "LOGIN":            "🎉",
+        "LOGOUT":           "👋",
+    }.get(event, "📡")
+
+    lines = [f"{icon} <b>Suricata — {event}</b>"]
+    if ip:  lines.append(f"🌐 IP: <code>{ip}</code>")
+    if sig: lines.append(f"📋 Signature: {sig[:200]}")
+    if sev: lines.append(f"🎯 Severity: {sev}")
+    if payload.get("hit_count"): lines.append(f"🔢 Hit Count: {payload['hit_count']}")
+    if msg: lines.append(f"ℹ️ {msg}")
+    lines.append(f"🕐 {ts}")
+
+    return {
+        "chat_id":    chat_id,
+        "text":       "\n".join(lines),
+        "parse_mode": "HTML",
+    }
+
+
 async def send_webhook(payload: dict):
     """Kirim notifikasi ke webhook URL yang dikonfigurasi (retry 3x)."""
     settings = load_settings()
@@ -154,8 +190,9 @@ async def send_webhook(payload: dict):
     headers.update(settings.get("webhook_headers", {}))
 
     # ── Deteksi platform & format payload ──────────────────────────────────────
-    is_discord = "discord.com/api/webhooks" in url or "discordapp.com" in url
-    is_slack   = "hooks.slack.com" in url
+    is_discord  = "discord.com/api/webhooks" in url or "discordapp.com" in url
+    is_slack    = "hooks.slack.com" in url
+    is_telegram = "api.telegram.org" in url
 
     if is_discord:
         body = _format_discord_payload(payload)
@@ -167,8 +204,15 @@ async def send_webhook(payload: dict):
         body  = {
             "text": f"*{event}* — IP: `{ip}`\n>{sig}"
         }
+    elif is_telegram:
+        # Telegram Bot API — butuh chat_id dari settings
+        chat_id = settings.get("telegram_chat_id", "").strip()
+        if not chat_id:
+            log.warning("Telegram webhook: telegram_chat_id belum diset di settings!")
+            return
+        body = _format_telegram_payload(payload, chat_id)
     else:
-        # Generic JSON — Telegram, custom endpoint, dll
+        # Generic JSON — custom endpoint
         body = payload
 
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -628,22 +672,24 @@ async def get_settings(_=Depends(verify_token)):
 
 
 class SettingsUpdate(BaseModel):
-    webhook_url:     Optional[str]  = None
-    webhook_headers: Optional[dict] = None
-    threshold:       Optional[int]  = None
-    severity:        Optional[int]  = None
-    interval:        Optional[int]  = None
-    secret_token:    Optional[str]  = None
+    webhook_url:       Optional[str]  = None
+    webhook_headers:   Optional[dict] = None
+    threshold:         Optional[int]  = None
+    severity:          Optional[int]  = None
+    interval:          Optional[int]  = None
+    secret_token:      Optional[str]  = None
+    telegram_chat_id:  Optional[str]  = None
 
 
 @app.post("/api/settings")
 async def update_settings(body: SettingsUpdate, _=Depends(verify_token)):
     s = load_settings()
-    if body.webhook_url     is not None: s["webhook_url"]     = body.webhook_url
-    if body.webhook_headers is not None: s["webhook_headers"] = body.webhook_headers
-    if body.threshold       is not None: s["threshold"]       = body.threshold
-    if body.severity        is not None: s["severity"]        = body.severity
-    if body.interval        is not None: s["interval"]        = body.interval
+    if body.webhook_url       is not None: s["webhook_url"]       = body.webhook_url
+    if body.webhook_headers   is not None: s["webhook_headers"]   = body.webhook_headers
+    if body.threshold         is not None: s["threshold"]         = body.threshold
+    if body.severity          is not None: s["severity"]          = body.severity
+    if body.interval          is not None: s["interval"]          = body.interval
+    if body.telegram_chat_id  is not None: s["telegram_chat_id"]  = body.telegram_chat_id
     if body.secret_token and body.secret_token != "••••••••":
         s["secret_token"] = body.secret_token
     save_settings(s)
