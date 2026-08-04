@@ -95,8 +95,7 @@ services:
     image: vulnerables/web-dvwa
     container_name: dvwa
     restart: unless-stopped
-    ports:
-      - "80:80"
+    network_mode: "host"
 
 volumes:
   suricata-rules:
