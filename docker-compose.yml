@@ -50,6 +50,7 @@ services:
       - ./auto_block/blocked_ips.log:/app/blocked_ips.log   # Log IP diblok
       - ./auto_block/alert_counts.json:/app/alert_counts.json # Sync state
       - ./dashboard/settings.json:/app/settings.json         # Baca setting dashboard
+      - ./dashboard/whitelist.json:/app/whitelist.json       # Baca whitelist secara lokal
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     environment:

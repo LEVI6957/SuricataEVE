@@ -50,16 +50,14 @@ last_whitelist_fetch = 0
 def get_dynamic_whitelist() -> set:
     global dynamic_whitelist, last_whitelist_fetch
     now = time.time()
-    # Fetch setiap 10 detik agar tidak membebani dashboard
-    if now - last_whitelist_fetch > 10:
+    if now - last_whitelist_fetch > 5:
         try:
-            with httpx.Client(timeout=2) as client:
-                res = client.get(f"{DASHBOARD_URL}/api/whitelist")
-                if res.status_code == 200:
-                    dynamic_whitelist = set(res.json())
-                    last_whitelist_fetch = now
+            if os.path.exists("/app/whitelist.json"):
+                with open("/app/whitelist.json", "r") as f:
+                    dynamic_whitelist = set(json.load(f))
         except Exception:
             pass
+        last_whitelist_fetch = now
     return dynamic_whitelist
 
 # ─── Dynamic Settings ─────────────────────────────────────────────────────────
