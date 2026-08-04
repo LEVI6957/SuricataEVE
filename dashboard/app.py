@@ -556,6 +556,23 @@ async def websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         if ws in ws_clients:
             ws_clients.remove(ws)
+@app.post("/internal/event")
+async def internal_event(payload: dict):
+    event_type = payload.get("type")
+    if event_type == "blocked":
+        src_ip = payload.get("src_ip")
+        if src_ip:
+            existing = next((b for b in blocked_ips if b["ip"] == src_ip), None)
+            if not existing:
+                blocked_ips.append({
+                    "ip": src_ip,
+                    "timestamp": payload.get("timestamp"),
+                    "signature": payload.get("signature"),
+                    "count": payload.get("count", 0)
+                })
+                stats["total_blocked"] = len(blocked_ips)
+            await broadcast(payload)
+    return {"status": "ok"}
 
 
 @app.get("/api/stats")
