@@ -13,11 +13,10 @@ services:
       - ./logs:/var/log/suricata # Mount log ke host
       - suricata-rules:/var/lib/suricata
       - suricata-config:/etc/suricata
-      - ./levi_custom.rules:/etc/suricata/rules/levi_custom.rules:ro # Custom rules
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     # Interface utama + loopback. Checksum dimatikan agar bisa mendeteksi serangan dari localhost
-    command: -i ${NET_IFACE:-enp86s0} -i lo --set stream.checksum-validation=no --set rule-files.1=levi_custom.rules
+    command: -i ${NET_IFACE:-enp86s0} -i lo --set stream.checksum-validation=no
 
   evebox:
     image: jasonish/evebox:latest
