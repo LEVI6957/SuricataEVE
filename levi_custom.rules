@@ -1,0 +1,75 @@
+# =============================================================================
+# levi_custom.rules — Custom Suricata Rules untuk Demo Dosen
+# Author: Levi (github.com/LEVI6957)
+# SID range: 9001001 - 9001030
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. PORT SCAN — nmap
+# -----------------------------------------------------------------------------
+alert tcp any any -> $HOME_NET any (msg:"LEVI Port Scan nmap Scripting Engine"; flow:to_server; content:"Nmap Scripting Engine"; http_header; classtype:network-scan; sid:9001001; rev:1;)
+alert tcp any any -> $HOME_NET any (msg:"LEVI Port Scan SYN Flood massal"; flags:S,12; threshold:type both,track by_src,count 50,seconds 5; classtype:network-scan; sid:9001002; rev:1;)
+
+# -----------------------------------------------------------------------------
+# 2. SSH BRUTE FORCE — hydra
+# -----------------------------------------------------------------------------
+alert tcp any any -> $HOME_NET 22 (msg:"LEVI SSH Brute Force Login Attempt"; flow:to_server,established; content:"SSH-"; depth:4; threshold:type both,track by_src,count 5,seconds 30; classtype:attempted-admin; sid:9001003; rev:1;)
+
+# -----------------------------------------------------------------------------
+# 3. ICMP FLOOD — ping
+# -----------------------------------------------------------------------------
+alert icmp any any -> $HOME_NET any (msg:"LEVI ICMP Flood Ping of Death"; itype:8; icode:0; threshold:type both,track by_src,count 50,seconds 5; classtype:denial-of-service; sid:9001004; rev:1;)
+
+# -----------------------------------------------------------------------------
+# 4. LOG4SHELL — CVE-2021-44228
+# -----------------------------------------------------------------------------
+alert http any any -> $HOME_NET any (msg:"LEVI Log4Shell CVE-2021-44228 JNDI ldap User-Agent"; flow:established,to_server; content:"${jndi:"; nocase; http_user_agent; classtype:web-application-attack; sid:9001005; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI Log4Shell CVE-2021-44228 JNDI rmi Header"; flow:established,to_server; content:"${jndi:"; nocase; http_header; classtype:web-application-attack; sid:9001006; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI Log4Shell CVE-2021-44228 JNDI dns URI"; flow:established,to_server; content:"${jndi:"; nocase; http_uri; classtype:web-application-attack; sid:9001007; rev:1;)
+
+# -----------------------------------------------------------------------------
+# 5. SQL INJECTION
+# -----------------------------------------------------------------------------
+alert http any any -> $HOME_NET any (msg:"LEVI SQL Injection UNION SELECT"; flow:established,to_server; content:"UNION"; nocase; content:"SELECT"; nocase; distance:0; within:30; http_uri; classtype:web-application-attack; sid:9001008; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI SQL Injection OR 1=1"; flow:established,to_server; content:"OR"; nocase; content:"1=1"; nocase; distance:0; within:20; http_uri; classtype:web-application-attack; sid:9001009; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI SQL Injection DROP TABLE"; flow:established,to_server; content:"DROP"; nocase; content:"TABLE"; nocase; distance:0; within:10; http_uri; classtype:web-application-attack; sid:9001010; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI SQL Injection SLEEP Blind"; flow:established,to_server; content:"SLEEP"; nocase; http_uri; classtype:web-application-attack; sid:9001011; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI SQL Injection EXTRACTVALUE"; flow:established,to_server; content:"EXTRACTVALUE"; nocase; http_uri; classtype:web-application-attack; sid:9001012; rev:1;)
+
+# -----------------------------------------------------------------------------
+# 6. XSS — Cross-Site Scripting
+# -----------------------------------------------------------------------------
+alert http any any -> $HOME_NET any (msg:"LEVI XSS Script Tag URI"; flow:established,to_server; content:"<script>"; nocase; http_uri; classtype:web-application-attack; sid:9001013; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI XSS onerror Event Handler"; flow:established,to_server; content:"onerror"; nocase; http_uri; classtype:web-application-attack; sid:9001014; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI XSS Script Tag Referer Header"; flow:established,to_server; content:"<script>"; nocase; http_header; classtype:web-application-attack; sid:9001015; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI XSS javascript eval URI"; flow:established,to_server; content:"javascript:eval"; nocase; http_uri; classtype:web-application-attack; sid:9001016; rev:1;)
+
+# -----------------------------------------------------------------------------
+# 7. LFI / PATH TRAVERSAL
+# -----------------------------------------------------------------------------
+alert http any any -> $HOME_NET any (msg:"LEVI LFI Path Traversal etc passwd"; flow:established,to_server; content:"etc/passwd"; nocase; http_uri; classtype:web-application-attack; sid:9001017; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI LFI Path Traversal etc shadow"; flow:established,to_server; content:"etc/shadow"; nocase; http_uri; classtype:web-application-attack; sid:9001018; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI LFI PHP Wrapper Filter"; flow:established,to_server; content:"php://filter"; nocase; http_uri; classtype:web-application-attack; sid:9001019; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI LFI proc self environ"; flow:established,to_server; content:"/proc/self/environ"; http_uri; classtype:web-application-attack; sid:9001020; rev:1;)
+
+# -----------------------------------------------------------------------------
+# 8. RCE / COMMAND INJECTION
+# -----------------------------------------------------------------------------
+alert http any any -> $HOME_NET any (msg:"LEVI RCE Command Injection cat passwd"; flow:established,to_server; content:"cat"; nocase; content:"/etc/passwd"; nocase; distance:0; within:30; http_uri; classtype:web-application-attack; sid:9001021; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI RCE wget Malware Download"; flow:established,to_server; content:"wget"; nocase; http_header; classtype:web-application-attack; sid:9001022; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI RCE Netcat Reverse Shell"; flow:established,to_server; content:"nc+"; nocase; content:"/bin/bash"; nocase; distance:0; within:50; http_uri; classtype:web-application-attack; sid:9001023; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI RCE Python Reverse Shell"; flow:established,to_server; content:"python3"; nocase; content:"socket"; nocase; distance:0; within:50; http_uri; classtype:web-application-attack; sid:9001024; rev:1;)
+
+# -----------------------------------------------------------------------------
+# 9. SHELLSHOCK — CVE-2014-6271
+# -----------------------------------------------------------------------------
+alert http any any -> $HOME_NET any (msg:"LEVI Shellshock CVE-2014-6271 User-Agent"; flow:established,to_server; content:"() {"; http_user_agent; classtype:web-application-attack; sid:9001025; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI Shellshock CVE-2014-6271 Referer Header"; flow:established,to_server; content:"() {"; http_header; classtype:web-application-attack; sid:9001026; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI Shellshock CVE-2014-6271 bash reverse shell"; flow:established,to_server; content:"/bin/bash"; http_header; content:"/dev/tcp/"; distance:0; within:100; classtype:web-application-attack; sid:9001027; rev:1;)
+
+# -----------------------------------------------------------------------------
+# 10. WEB SCANNER — Nikto
+# -----------------------------------------------------------------------------
+alert http any any -> $HOME_NET any (msg:"LEVI Web Scanner Nikto User-Agent"; flow:established,to_server; content:"Nikto"; http_user_agent; classtype:web-application-attack; sid:9001028; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI Web Scanner Nikto .git config probe"; flow:established,to_server; content:".git/config"; http_uri; classtype:web-application-attack; sid:9001029; rev:1;)
+alert http any any -> $HOME_NET any (msg:"LEVI Web Scanner phpmyadmin probe"; flow:established,to_server; content:"phpmyadmin"; nocase; http_uri; classtype:web-application-attack; sid:9001030; rev:1;)
