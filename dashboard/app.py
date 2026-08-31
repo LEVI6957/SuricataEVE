@@ -366,6 +366,10 @@ async def tail_eve():
             if severity > settings.get("severity", 2):
                 continue
 
+            # FIX Bug 2: Skip IP yang ada di whitelist — konsisten dengan auto_block.py
+            if src_ip in dynamic_whitelist:
+                continue
+
             # Update stats & alert counts (1 sumber: tail_eve saja, bukan internal_event)
             stats["total_alerts"] += 1
             alert_counts[src_ip] += 1
@@ -556,23 +560,7 @@ async def websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         if ws in ws_clients:
             ws_clients.remove(ws)
-@app.post("/internal/event")
-async def internal_event(payload: dict):
-    event_type = payload.get("type")
-    if event_type == "blocked":
-        src_ip = payload.get("src_ip")
-        if src_ip:
-            existing = next((b for b in blocked_ips if b["ip"] == src_ip), None)
-            if not existing:
-                blocked_ips.append({
-                    "ip": src_ip,
-                    "timestamp": payload.get("timestamp"),
-                    "signature": payload.get("signature"),
-                    "count": payload.get("count", 0)
-                })
-                stats["total_blocked"] = len(blocked_ips)
-            await broadcast(payload)
-    return {"status": "ok"}
+
 
 
 @app.get("/api/stats")
@@ -634,6 +622,12 @@ async def add_whitelist(ip: str):
 async def remove_whitelist(ip: str):
     dynamic_whitelist.discard(ip)
     save_whitelist()
+
+    # FIX Bug 3 & 4: Reset alert_counts agar sinkron dengan auto_block.py
+    # Saat IP keluar whitelist, auto_block mulai hitung dari 0,
+    # dashboard harus sama agar tidak ada ghost count lama.
+    alert_counts.pop(ip, None)
+
     asyncio.create_task(send_webhook({
         "event": "WHITELIST_REMOVE",
         "ip": ip,
