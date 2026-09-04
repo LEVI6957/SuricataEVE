@@ -611,6 +611,12 @@ async def get_whitelist():
 async def add_whitelist(ip: str):
     dynamic_whitelist.add(ip)
     save_whitelist()
+
+    # Jika IP sebelumnya terlanjur diblokir, otomatis lepaskan blokir dari iptables & state
+    _ipt_unblock(ip)
+    update_state_unblock(ip)
+    await broadcast({"type": "unblocked", "ip": ip})
+
     asyncio.create_task(send_webhook({
         "event": "WHITELIST_ADD",
         "ip": ip,

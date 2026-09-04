@@ -145,8 +145,8 @@ def load_state():
         disk_counts  = data.get("alert_counts", {})
         disk_blocked = set(data.get("blocked_ips", []))
 
-        # Prioritas disk: jika dashboard unblock → hapus dari memory
-        blocked_ips = disk_blocked
+        # Prioritas disk: jika dashboard unblock → hapus dari memory. Abaikan IP yang whitelisted
+        blocked_ips = {ip for ip in disk_blocked if not is_whitelisted(ip)}
 
         for ip, count in disk_counts.items():
             alert_counts[ip] = count
@@ -390,10 +390,22 @@ def main():
     if blocked_ips:
         log.info(f"Re-applying {len(blocked_ips)} IP dari state sebelumnya ke iptables...")
         for ip in list(blocked_ips):
+            if is_whitelisted(ip):
+                blocked_ips.discard(ip)
+                if is_ip_blocked_in_iptables(ip):
+                    unblock_ip(ip)
+                continue
             if not is_ip_blocked_in_iptables(ip):
                 version = get_ip_version(ip)
                 run_ipt(["-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"], ip_version=version)
                 log.info(f"  Re-blocked: {ip}")
+        save_state()
+
+    # Pastikan tidak ada IP whitelist yang terblokir di iptables
+    for wip in sorted(WHITELIST_IPS | get_dynamic_whitelist()):
+        if is_ip_blocked_in_iptables(wip):
+            log.warning(f"Menghapus IP Whitelist {wip} dari iptables DROP rule...")
+            unblock_ip(wip)
 
     log.info("Mulai membaca Suricata eve.json...")
 
@@ -419,6 +431,12 @@ def main():
         category  = alert.get("category", "")
 
         update_dynamic_settings()
+
+        # Otomatis lepaskan blokir jika ada IP di blocked_ips yang baru masuk whitelist
+        for b_ip in list(blocked_ips):
+            if is_whitelisted(b_ip):
+                unblock_ip(b_ip)
+                save_state()
 
         # Filter: skip jika severity rendah, IP kosong, atau whitelisted
         if severity > current_severity or not src_ip or is_whitelisted(src_ip):
