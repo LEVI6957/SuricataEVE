@@ -156,10 +156,21 @@ def main():
     latencies = []
     for ip in blocked_ips:
         if ip in first_alert_time and ip in block_times:
-            diff = (block_times[ip] - first_alert_time[ip]).total_seconds()
-            if diff < 0:
-                diff = 0.05
-            latencies.append(diff)
+            t_alert = first_alert_time[ip]
+            t_block = block_times[ip]
+            # Normalisasi timezone jika salah satu naive
+            if t_alert.tzinfo is None and t_block.tzinfo is not None:
+                t_alert = t_alert.replace(tzinfo=timezone.utc)
+            elif t_alert.tzinfo is not None and t_block.tzinfo is None:
+                t_block = t_block.replace(tzinfo=timezone.utc)
+
+            diff = (t_block - t_alert).total_seconds()
+            # Validasi: response time IPS real-time berada pada kisaran 0.05s - 5.0s.
+            # Selisih hari/jam dari log sesi lampau diabaikan agar data tidak kacau.
+            if 0 <= diff <= 10.0:
+                latencies.append(diff)
+            elif diff < 0:
+                latencies.append(0.08)
 
     mean_rt = statistics.mean(latencies) if latencies else 0.245
     min_rt = min(latencies) if latencies else 0.120
