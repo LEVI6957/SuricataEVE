@@ -1,0 +1,7 @@
+{
+  "test_date": "2026-09-04 20:01:55",
+  "attack_type": "Manual Penetration Testing & Web Attack Scenarios",
+  "target_ip": "192.168.216.128",
+  "suricata_version": "Suricata 7.x (ET Open Rules)",
+  "tester": "Administrator / Researcher"
+}
