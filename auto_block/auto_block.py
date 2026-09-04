@@ -16,6 +16,7 @@ Author: Levi (github.com/LEVI6957)
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -42,6 +43,28 @@ env_whitelist = os.getenv("WHITELIST_IPS", "")
 WHITELIST_IPS = {"127.0.0.1", "::1", "0.0.0.0"}
 if env_whitelist:
     WHITELIST_IPS.update([ip.strip() for ip in env_whitelist.split(",") if ip.strip()])
+
+def get_local_ips() -> set:
+    """
+    Deteksi semua IP dari semua network interface lokal secara otomatis.
+    Digunakan untuk mencegah server memblok dirinya sendiri.
+    """
+    ips = set()
+    try:
+        result = subprocess.run(["ip", "addr", "show"], capture_output=True, text=True)
+        # Tangkap semua IPv4 dan IPv6 (format: inet 1.2.3.4/24 atau inet6 ::1/128)
+        for match in re.finditer(r'inet6?\s+([0-9a-fA-F.:]+)', result.stdout):
+            ip_str = match.group(1)
+            ips.add(ip_str)
+    except Exception:
+        pass
+    return ips
+
+# Tambahkan semua IP lokal server ke whitelist secara otomatis
+# Ini mencegah server memblok dirinya sendiri jika Suricata mendeteksi
+# traffic yang berasal dari IP server itu sendiri.
+WHITELIST_IPS.update(get_local_ips())
+
 
 # Dynamic whitelist dari Dashboard UI
 dynamic_whitelist = set()
@@ -341,6 +364,7 @@ def main():
     log.info(f"  Threshold    : {BLOCK_THRESHOLD} alerts")
     log.info(f"  Min Severity : {ALERT_SEVERITY}")
     log.info(f"  Dashboard    : {DASHBOARD_URL}")
+    log.info(f"  Whitelisted  : {sorted(WHITELIST_IPS)}")
     log.info("=" * 58)
 
     load_state()
