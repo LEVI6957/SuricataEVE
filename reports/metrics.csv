@@ -1,0 +1,13 @@
+Metric,Value,Description
+Total Test Cases,13,Total pengujian skenario serangan dan normal
+True Positive (TP),10,Serangan berbahaya yang berhasil dideteksi dan diblokir
+False Negative (FN),1,Serangan nyata yang lolos dari signature IDS (Bypass)
+False Positive (FP),1,Aktivitas pengguna sah yang keliru dicurigai (Alarm Palsu)
+True Negative (TN),1,Traffic normal yang benar-benar diizinkan lewat
+Accuracy,84.62%,Rasio ketepatan klasifikasi total
+Recall (Detection Coverage),90.91%,Kemampuan mendeteksi serangan nyata (Sensitivity)
+Precision,90.91%,Tingkat ketepatan alarm terhadap ancaman sebenarnya
+F1-Score,90.91%,Rata-rata harmonis antara Recall dan Precision
+False Positive Rate (FPR),50.00%,Peluang pengguna normal terganggu false alarm
+Successful Mitigation Rate,100.00%,Persentase penyerang yang berhasil di-DROP iptables
+Average Response Time,0.245 s,Rata-rata latensi deteksi hingga pemblokiran
