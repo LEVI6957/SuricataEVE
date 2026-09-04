@@ -256,19 +256,24 @@ def is_ip_blocked_in_iptables(ip: str) -> bool:
 
 def block_ip(ip: str, signature: str, count: int) -> bool:
     """Tambahkan rule DROP untuk IP di chain SURICATA_BLOCK."""
-    if ip in blocked_ips or is_whitelisted(ip):
+    if is_whitelisted(ip):
         return False
 
     version = get_ip_version(ip)
+    already_in_ipt = is_ip_blocked_in_iptables(ip)
 
-    # Coba jalankan iptables insert
-    if not is_ip_blocked_in_iptables(ip):
+    # Jika sudah ada di iptables dan di memory, tidak perlu eksekusi lagi
+    if already_in_ipt and ip in blocked_ips:
+        return False
+
+    # Coba jalankan iptables insert jika belum ada di iptables
+    if not already_in_ipt:
         result = run_ipt(["-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"], ip_version=version)
         if result.returncode != 0:
             log.error(f"Gagal blok {ip} via IPv{version}: {result.stderr.strip()}")
             return False
 
-    # Jika sampai sini, berarti berhasil diblok atau sudah terblokir sebelumnya
+    # Catat ke memory
     blocked_ips.add(ip)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     log.warning(f"🔒 DIBLOK [IPv{version}]: {ip} | {signature} | hit={count}")
@@ -433,7 +438,7 @@ def main():
         # yang bisa menjadi bottleneck performa saat terjadi serangan DDoS besar-besaran.
 
         # Blok jika threshold tercapai
-        if count >= current_threshold and src_ip not in blocked_ips:
+        if count >= current_threshold and (src_ip not in blocked_ips or not is_ip_blocked_in_iptables(src_ip)):
             blocked = block_ip(src_ip, signature, count)
             if blocked:
                 save_state()
