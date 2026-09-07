@@ -1,3 +1,0 @@
-# Daftar IP Pengguna Sah / Normal (Ground Truth Normal)
-192.168.216.1
-192.168.216.120

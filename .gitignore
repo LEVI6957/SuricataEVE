@@ -54,3 +54,16 @@ Catatan_Perintah_Suricata.txt
 # Generated Explanation Docs
 Penjelasan_Sistem.html
 penjelasan
+
+# Generated Reports (dihasilkan oleh python3 report.py - JANGAN di-commit)
+reports/
+dashboard/static/report_summary.html
+dashboard/static/confusion_matrix.png
+dashboard/static/accuracy_chart.png
+dashboard/static/mitigation_chart.png
+dashboard/static/latency_chart.png
+
+# Ground Truth & Metadata (buat sendiri di server - JANGAN di-commit)
+attackers.txt
+normal.txt
+attack_metadata.json
