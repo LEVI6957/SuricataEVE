@@ -4,7 +4,7 @@
     "suricata_version": "Suricata 8.x (ET Open Rules)",
     "test_method": "Automated Exploit Simulation (atk.sh)",
     "tester": "Administrator",
-    "note": "10 Serangan Pasti Deteksi + 1 FN + 1 TN"
+    "note": "10 Attack scenarios + 1 FN + 1 TN"
   },
   "scenarios": [
     {
@@ -14,8 +14,8 @@
       "expected_signature": "ET SCAN",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "nmap -sV -sC -A -T4",
-      "notes": "Deteksi scan agresif via Nmap"
+      "tool": "nmap -sV -sC -A -T4 -p 1-1000",
+      "notes": "Deteksi port scan agresif via Nmap"
     },
     {
       "attack_id": "ATK-002",
@@ -29,23 +29,23 @@
     },
     {
       "attack_id": "ATK-003",
-      "attack_name": "Nmap FIN Scan",
+      "attack_name": "Nikto Web Scanner",
       "attacker_ip": "192.168.216.103",
       "expected_signature": "ET SCAN",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "nmap -sF -T4",
-      "notes": "FIN packet scan"
+      "tool": "curl -H 'User-Agent: Mozilla/5.00 (Nikto/2.1.6)'",
+      "notes": "Deteksi User-Agent scanner Nikto"
     },
     {
       "attack_id": "ATK-004",
-      "attack_name": "Nmap XMAS Scan",
+      "attack_name": "sqlmap Automated Scanner",
       "attacker_ip": "192.168.216.104",
-      "expected_signature": "ET SCAN",
+      "expected_signature": "ET WEB_SERVER",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "nmap -sX -T4",
-      "notes": "TCP packet FIN+PSH+URG"
+      "tool": "curl -H 'User-Agent: sqlmap/1.7.6'",
+      "notes": "Deteksi User-Agent sqlmap"
     },
     {
       "attack_id": "ATK-005",
@@ -54,7 +54,7 @@
       "expected_signature": "ET WEB_SERVER",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "curl /vulnerabilities/fi/?page=../../../../etc/passwd",
+      "tool": "curl '/?page=../../../../../../../../etc/passwd'",
       "notes": "Path traversal untuk membaca /etc/passwd"
     },
     {
@@ -64,8 +64,8 @@
       "expected_signature": "ET WEB_SERVER",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "curl /muieblackcat",
-      "notes": "Signature scanner lawas yang dikenali ET rules"
+      "tool": "curl /muieblackcat + /w00tw00t.at.ISC.SANS",
+      "notes": "Signature scanner Morfeus lawas"
     },
     {
       "attack_id": "ATK-007",
@@ -74,8 +74,8 @@
       "expected_signature": "ET WEB_SERVER",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "curl /?=PHPE9568F34-D428-11d2-A769-00AA001ACF42",
-      "notes": "PHP internal page leak"
+      "tool": "curl '/?=PHPE9568F34-D428-11d2-A769-00AA001ACF42'",
+      "notes": "PHP internal page leak via easter egg"
     },
     {
       "attack_id": "ATK-008",
@@ -109,23 +109,23 @@
     },
     {
       "attack_id": "ATK-011",
-      "attack_name": "SQLi Obfuscation Bypass",
+      "attack_name": "SQLi Obfuscation Bypass (False Negative)",
       "attacker_ip": "192.168.216.111",
-      "expected_signature": "obfuscated_sqli_not_in_rules",
+      "expected_signature": "",
       "expected_detection": false,
       "expected_block": false,
       "tool": "curl '?id=1+/*!50000UNION*/+/*!50000SELECT*/+1,user()'",
-      "notes": "SQLi obfuscation MySQL comment yang lolos dari signature ET Open"
+      "notes": "SQLi obfuscation yang sengaja lolos dari signature ET Open (FN)"
     },
     {
       "attack_id": "ATK-012",
-      "attack_name": "Normal User Browsing",
+      "attack_name": "Normal User Browsing (True Negative)",
       "attacker_ip": "192.168.216.112",
       "expected_signature": "",
       "expected_detection": false,
       "expected_block": false,
-      "tool": "curl http://target/ && curl http://target/login.php",
-      "notes": "Traffic pengguna sah - tidak boleh diblokir"
+      "tool": "curl http://target/index.php",
+      "notes": "Traffic pengguna sah - tidak boleh diblokir (TN)"
     }
   ]
 }
