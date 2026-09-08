@@ -30,7 +30,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     command: >
-      evebox server --datastore sqlite --data-directory /var/lib/evebox --host 0.0.0.0 --no-auth --no-tls /var/log/suricata/eve.json
+      evebox server --datastore sqlite --data-directory /var/lib/evebox --host 0.0.0.0 --port 5636 --no-auth --no-tls /var/log/suricata/eve.json
     depends_on:
       - suricata
 
