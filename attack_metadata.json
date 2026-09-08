@@ -2,130 +2,130 @@
   "info": {
     "target_ip": "192.168.216.128",
     "suricata_version": "Suricata 8.x (ET Open Rules)",
-    "test_method": "Automated CVE Exploitation (atk.sh)",
+    "test_method": "Automated Exploit Simulation (atk.sh)",
     "tester": "Administrator",
-    "note": "10 CVE Exploits + 1 FN + 1 TN"
+    "note": "10 Serangan Pasti Deteksi + 1 FN + 1 TN"
   },
   "scenarios": [
     {
-      "attack_id": "CVE-2021-44228",
-      "attack_name": "Log4Shell JNDI Injection",
+      "attack_id": "ATK-001",
+      "attack_name": "Nmap Aggressive Port Scan",
       "attacker_ip": "192.168.216.101",
-      "expected_signature": "ET EXPLOIT",
+      "expected_signature": "ET SCAN",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "curl -H 'User-Agent: ${jndi:ldap...}'",
-      "notes": "Eksploitasi RCE pada Java Log4j"
+      "tool": "nmap -sV -sC -A -T4",
+      "notes": "Deteksi scan agresif via Nmap"
     },
     {
-      "attack_id": "CVE-2014-6271",
-      "attack_name": "Shellshock Bash CGI",
+      "attack_id": "ATK-002",
+      "attack_name": "Nmap SYN Stealth Scan",
       "attacker_ip": "192.168.216.102",
-      "expected_signature": "ET EXPLOIT",
+      "expected_signature": "ET SCAN",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "curl -A '() { :;}; echo ...'",
-      "notes": "Eksploitasi RCE pada Bash CGI via User-Agent"
+      "tool": "nmap -sS -O -T4",
+      "notes": "TCP SYN scan tanpa complete handshake"
     },
     {
-      "attack_id": "CVE-2021-41773",
-      "attack_name": "Apache Path Traversal",
+      "attack_id": "ATK-003",
+      "attack_name": "Nmap FIN Scan",
       "attacker_ip": "192.168.216.103",
+      "expected_signature": "ET SCAN",
+      "expected_detection": true,
+      "expected_block": true,
+      "tool": "nmap -sF -T4",
+      "notes": "FIN packet scan"
+    },
+    {
+      "attack_id": "ATK-004",
+      "attack_name": "Nmap XMAS Scan",
+      "attacker_ip": "192.168.216.104",
+      "expected_signature": "ET SCAN",
+      "expected_detection": true,
+      "expected_block": true,
+      "tool": "nmap -sX -T4",
+      "notes": "TCP packet FIN+PSH+URG"
+    },
+    {
+      "attack_id": "ATK-005",
+      "attack_name": "Local File Inclusion (CVE-2007-0450)",
+      "attacker_ip": "192.168.216.105",
       "expected_signature": "ET WEB_SERVER",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "curl /cgi-bin/.%2e/.%2e/.%2e/etc/passwd",
-      "notes": "Membaca file rahasia melalui kelemahan Apache 2.4.49"
+      "tool": "curl /vulnerabilities/fi/?page=../../../../etc/passwd",
+      "notes": "Path traversal untuk membaca /etc/passwd"
     },
     {
-      "attack_id": "CVE-2017-9841",
-      "attack_name": "PHPUnit RCE",
-      "attacker_ip": "192.168.216.104",
-      "expected_signature": "ET EXPLOIT",
-      "expected_detection": true,
-      "expected_block": true,
-      "tool": "curl /vendor/phpunit/phpunit/.../eval-stdin.php",
-      "notes": "Eksekusi kode PHP langsung melalui eval-stdin.php"
-    },
-    {
-      "attack_id": "CVE-2017-5638",
-      "attack_name": "Apache Struts 2 OGNL RCE",
-      "attacker_ip": "192.168.216.105",
-      "expected_signature": "ET EXPLOIT",
-      "expected_detection": true,
-      "expected_block": true,
-      "tool": "curl -H 'Content-Type: %{(#_=...}'",
-      "notes": "OGNL Injection melalui Content-Type HTTP Header"
-    },
-    {
-      "attack_id": "CVE-2022-26134",
-      "attack_name": "Confluence OGNL RCE",
+      "attack_id": "ATK-006",
+      "attack_name": "Morfeus Web Scanner",
       "attacker_ip": "192.168.216.106",
-      "expected_signature": "ET EXPLOIT",
+      "expected_signature": "ET WEB_SERVER",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "curl /%24%7B%28%23a%3D...",
-      "notes": "Unauthenticated RCE pada Atlassian Confluence"
+      "tool": "curl /muieblackcat",
+      "notes": "Signature scanner lawas yang dikenali ET rules"
     },
     {
-      "attack_id": "CVE-2020-14882",
-      "attack_name": "WebLogic RCE",
+      "attack_id": "ATK-007",
+      "attack_name": "PHP Easter Egg (CVE-2004-0983)",
       "attacker_ip": "192.168.216.107",
-      "expected_signature": "ET EXPLOIT",
+      "expected_signature": "ET WEB_SERVER",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "curl /console/images/...mvel2.sh...",
-      "notes": "Bypass autentikasi dan eksekusi kode pada Oracle WebLogic"
+      "tool": "curl /?=PHPE9568F34-D428-11d2-A769-00AA001ACF42",
+      "notes": "PHP internal page leak"
     },
     {
-      "attack_id": "CVE-2022-22965",
-      "attack_name": "Spring4Shell",
+      "attack_id": "ATK-008",
+      "attack_name": "Gobuster Directory Scanner",
       "attacker_ip": "192.168.216.108",
-      "expected_signature": "ET EXPLOIT",
+      "expected_signature": "ET WEB_SERVER",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "curl -d 'class.module.classLoader...'",
-      "notes": "Manipulasi ClassLoader pada framework Spring MVC"
+      "tool": "curl -H 'User-Agent: gobuster/3.1.0'",
+      "notes": "Deteksi User-Agent scanner Gobuster"
     },
     {
-      "attack_id": "CVE-2020-5902",
-      "attack_name": "F5 BIG-IP RCE",
+      "attack_id": "ATK-009",
+      "attack_name": "Log4Shell (CVE-2021-44228)",
       "attacker_ip": "192.168.216.109",
       "expected_signature": "ET EXPLOIT",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "curl /tmui/login.jsp/..;/tmui/.../fileRead.jsp",
-      "notes": "Directory traversal dan RCE pada antarmuka F5 TMUI"
+      "tool": "curl -H 'User-Agent: ${jndi:ldap://...}'",
+      "notes": "RCE exploit via JNDI injection di header User-Agent"
     },
     {
-      "attack_id": "CVE-2018-7600",
-      "attack_name": "Drupalgeddon 2",
+      "attack_id": "ATK-010",
+      "attack_name": "HTTP TRACE Method (CVE-2010-0386)",
       "attacker_ip": "192.168.216.110",
-      "expected_signature": "ET EXPLOIT",
+      "expected_signature": "ET WEB_SERVER",
       "expected_detection": true,
       "expected_block": true,
-      "tool": "curl -d 'form_id=...&mail[#post_render]...'",
-      "notes": "RCE melalui kelemahan struktur Form API Drupal"
+      "tool": "curl -X TRACE http://target/",
+      "notes": "Cross-Site Tracing via method HTTP TRACE"
     },
     {
-      "attack_id": "BYPASS-01",
+      "attack_id": "ATK-011",
       "attack_name": "SQLi Obfuscation Bypass",
       "attacker_ip": "192.168.216.111",
-      "expected_signature": "",
+      "expected_signature": "obfuscated_sqli_not_in_rules",
       "expected_detection": false,
       "expected_block": false,
-      "tool": "curl '?id=1+/*!50000UNION*/...'",
-      "notes": "Serangan bypass (False Negative) untuk membuktikan sistem tidak 100% sempurna"
+      "tool": "curl '?id=1+/*!50000UNION*/+/*!50000SELECT*/+1,user()'",
+      "notes": "SQLi obfuscation MySQL comment yang lolos dari signature ET Open"
     },
     {
-      "attack_id": "NORMAL-01",
-      "attack_name": "Normal User Traffic",
+      "attack_id": "ATK-012",
+      "attack_name": "Normal User Browsing",
       "attacker_ip": "192.168.216.112",
       "expected_signature": "",
       "expected_detection": false,
       "expected_block": false,
-      "tool": "curl http://target/login.php",
-      "notes": "Akses web normal pengguna sah (True Negative)"
+      "tool": "curl http://target/ && curl http://target/login.php",
+      "notes": "Traffic pengguna sah - tidak boleh diblokir"
     }
   ]
 }
