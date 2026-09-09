@@ -254,7 +254,7 @@ def is_ip_blocked_in_iptables(ip: str) -> bool:
     return result.returncode == 0
 
 
-def block_ip(ip: str, signature: str, count: int, attack_ts: str = "") -> bool:
+def block_ip(ip: str, signature: str, count: int) -> bool:
     """Tambahkan rule DROP untuk IP di chain SURICATA_BLOCK."""
     if is_whitelisted(ip):
         return False
@@ -275,16 +275,13 @@ def block_ip(ip: str, signature: str, count: int, attack_ts: str = "") -> bool:
 
     # Catat ke memory
     blocked_ips.add(ip)
-    block_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     log.warning(f"🔒 DIBLOK [IPv{version}]: {ip} | {signature} | hit={count}")
 
-    # Tulis ke log file — catat KEDUA timestamp: serangan & saat diblokir
+    # Tulis ke log file
     try:
         with open(BLOCKED_LOG, "a") as f:
-            if attack_ts:
-                f.write(f"{block_ts} | BLOCKED | {ip} | {signature} | attack_ts={attack_ts}\n")
-            else:
-                f.write(f"{block_ts} | BLOCKED | {ip} | {signature}\n")
+            f.write(f"{ts} | BLOCKED | {ip} | {signature}\n")
     except Exception as e:
         log.warning(f"Gagal tulis log: {e}")
 
@@ -295,7 +292,6 @@ def block_ip(ip: str, signature: str, count: int, attack_ts: str = "") -> bool:
         "signature": signature,
         "count":     count,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "attack_ts": attack_ts,
     })
     return True
 
@@ -433,8 +429,6 @@ def main():
         src_ip    = event.get("src_ip", "")
         signature = alert.get("signature", "N/A")
         category  = alert.get("category", "")
-        # Ambil timestamp asli dari eve.json untuk dicatat di log blokir
-        attack_ts = event.get("timestamp", "")
 
         update_dynamic_settings()
 
@@ -463,7 +457,7 @@ def main():
 
         # Blok jika threshold tercapai
         if count >= current_threshold and (src_ip not in blocked_ips or not is_ip_blocked_in_iptables(src_ip)):
-            blocked = block_ip(src_ip, signature, count, attack_ts=attack_ts)
+            blocked = block_ip(src_ip, signature, count)
             if blocked:
                 save_state()
 
