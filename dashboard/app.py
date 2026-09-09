@@ -324,6 +324,85 @@ def load_initial_blocked():
 
 
 # ─── Eve.json Tail Task ───────────────────────────────────────────────────────
+def _parse_alert_line(line: str, settings: dict) -> dict | None:
+    """Parse satu baris eve.json dan kembalikan alert_payload jika valid, else None."""
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+
+    if event.get("event_type") != "alert":
+        return None
+
+    severity  = event.get("alert", {}).get("severity", 99)
+    src_ip    = event.get("src_ip", "")
+    signature = event.get("alert", {}).get("signature", "N/A")
+    category  = event.get("alert", {}).get("category", "N/A")
+    ts        = event.get("timestamp", datetime.now(timezone.utc).isoformat())
+
+    if severity > settings.get("severity", 2):
+        return None
+    if src_ip in dynamic_whitelist:
+        return None
+
+    return {
+        "type":      "alert",
+        "src_ip":    src_ip,
+        "signature": signature,
+        "category":  category,
+        "severity":  severity,
+        "timestamp": ts,
+    }
+
+
+async def load_historical_alerts():
+    """
+    Baca eve.json dari awal dan muat alert 3 hari terakhir ke recent_alerts.
+    Dipanggil 1x saat startup sebelum tail dimulai.
+    """
+    if not os.path.exists(EVE_LOG_PATH):
+        return
+
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=3)
+    settings = load_settings()
+    loaded = 0
+
+    log.info("Memuat alert historis 3 hari terakhir dari eve.json...")
+    temp_alerts = []
+
+    async with aiofiles.open(EVE_LOG_PATH, "r") as f:
+        async for line in f:
+            payload = _parse_alert_line(line, settings)
+            if not payload:
+                continue
+
+            # Filter hanya 3 hari terakhir
+            try:
+                ts_dt = datetime.fromisoformat(payload["timestamp"].replace("Z", "+00:00"))
+                if ts_dt < cutoff:
+                    continue
+            except Exception:
+                pass
+
+            # Update stats & counts (tidak broadcast, tidak kirim webhook)
+            stats["total_alerts"] += 1
+            alert_counts[payload["src_ip"]] += 1
+            payload["count"] = alert_counts[payload["src_ip"]]
+            payload["threshold"] = settings.get("threshold", 3)
+            temp_alerts.append(payload)
+            loaded += 1
+
+    # Masukkan ke recent_alerts (urutan terbaru di depan, deque maxlen=200)
+    for p in temp_alerts:
+        recent_alerts.appendleft(p)
+
+    log.info(f"Selesai memuat {loaded} alert historis ke Live Feed.")
+
+
 async def tail_eve():
     """
     Background task: tail eve.json dan tampilkan alert di dashboard.
@@ -334,71 +413,44 @@ async def tail_eve():
         log.info(f"Menunggu {EVE_LOG_PATH} ...")
         await asyncio.sleep(5)
 
-    log.info(f"Mulai membaca {EVE_LOG_PATH}")
+    # Muat alert historis 3 hari terakhir saat startup
+    await load_historical_alerts()
+
+    log.info(f"Mulai memantau (tail) {EVE_LOG_PATH} untuk alert baru...")
 
     async with aiofiles.open(EVE_LOG_PATH, "r") as f:
-        await f.seek(0, 2)  # Loncat ke akhir file
+        await f.seek(0, 2)  # Loncat ke akhir file — hanya pantau yang baru
         while True:
             line = await f.readline()
             if not line:
                 await asyncio.sleep(0.3)
                 continue
 
-            line = line.strip()
-            if not line:
+            settings = load_settings()
+            payload = _parse_alert_line(line, settings)
+            if not payload:
                 continue
 
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            if event.get("event_type") != "alert":
-                continue
-
-            settings  = load_settings()
-            severity  = event.get("alert", {}).get("severity", 99)
-            src_ip    = event.get("src_ip", "")
-            signature = event.get("alert", {}).get("signature", "N/A")
-            category  = event.get("alert", {}).get("category", "N/A")
-            ts        = event.get("timestamp", datetime.now(timezone.utc).isoformat())
-
-            if severity > settings.get("severity", 2):
-                continue
-
-            # FIX Bug 2: Skip IP yang ada di whitelist — konsisten dengan auto_block.py
-            if src_ip in dynamic_whitelist:
-                continue
-
-            # Update stats & alert counts (1 sumber: tail_eve saja, bukan internal_event)
+            # Update stats & alert counts
             stats["total_alerts"] += 1
-            alert_counts[src_ip] += 1
-            count = alert_counts[src_ip]
+            alert_counts[payload["src_ip"]] += 1
+            payload["count"]     = alert_counts[payload["src_ip"]]
+            payload["threshold"] = settings.get("threshold", 3)
 
-            alert_payload = {
-                "type":      "alert",
-                "src_ip":    src_ip,
-                "signature": signature,
-                "category":  category,
-                "severity":  severity,
-                "count":     count,
-                "threshold": settings.get("threshold", 3),
-                "timestamp": ts,
-            }
-            recent_alerts.appendleft(alert_payload)
+            recent_alerts.appendleft(payload)
 
             # Broadcast ke UI (live feed)
-            await broadcast(alert_payload)
+            await broadcast(payload)
 
             # Kirim webhook untuk high/medium severity (1 atau 2) pertama kali
-            if severity <= 2 and count == 1:
+            if payload["severity"] <= 2 and payload["count"] == 1:
                 await send_webhook({
                     "event":     "HIGH_ALERT",
-                    "ip":        src_ip,
-                    "signature": signature,
-                    "category":  category,
-                    "severity":  severity,
-                    "timestamp": ts,
+                    "ip":        payload["src_ip"],
+                    "signature": payload["signature"],
+                    "category":  payload["category"],
+                    "severity":  payload["severity"],
+                    "timestamp": payload["timestamp"],
                 })
 
 
