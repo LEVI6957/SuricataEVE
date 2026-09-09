@@ -394,11 +394,11 @@ async def load_historical_alerts():
     settings["severity"] = max(settings.get("severity", 3), 3)
     loaded = 0
 
-    log.info("Memuat alert historis 3 hari terakhir (baca 50MB terakhir eve.json)...")
+    log.info("Memuat alert historis 3 hari terakhir (baca 300MB terakhir eve.json)...")
     temp_alerts = []
 
-    # Baca 50MB terakhir dari file — cukup untuk beberapa hari log
-    READ_BYTES = 50 * 1024 * 1024  # 50 MB
+    # Perbesar ke 300MB agar cukup menampung beberapa hari log dari file 742MB
+    READ_BYTES = 300 * 1024 * 1024  # 300 MB
     try:
         lines = await asyncio.get_event_loop().run_in_executor(
             None, _read_last_bytes, EVE_LOG_PATH, READ_BYTES
@@ -460,6 +460,8 @@ async def tail_eve():
                 continue
 
             settings = load_settings()
+            # Paksa severity min 3 agar konsisten dengan historical load
+            settings["severity"] = max(settings.get("severity", 3), 3)
             payload = _parse_alert_line(line, settings, check_whitelist=True)  # Live: cegah notif dari IP whitelist
             if not payload:
                 continue

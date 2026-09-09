@@ -17,7 +17,7 @@ COPY app.py .
 COPY static/ ./static/
 
 # Default settings file jika belum ada
-RUN echo '{"webhook_url":"","webhook_headers":{},"threshold":3,"severity":2,"interval":10,"secret_token":""}' \
+RUN echo '{"webhook_url":"","webhook_headers":{},"threshold":3,"severity":3,"interval":10,"secret_token":""}' \
     > /app/settings.json
 
 EXPOSE 8080
