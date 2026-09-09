@@ -343,7 +343,8 @@ def _parse_alert_line(line: str, settings: dict) -> dict | None:
     category  = event.get("alert", {}).get("category", "N/A")
     ts        = event.get("timestamp", datetime.now(timezone.utc).isoformat())
 
-    if severity > settings.get("severity", 2):
+    # FIX: Default severity filter dinaikkan ke 3 agar alert umum (scan, LFI, dsb) ikut tampil
+    if severity > settings.get("severity", 3):
         return None
     if src_ip in dynamic_whitelist:
         return None
@@ -358,10 +359,25 @@ def _parse_alert_line(line: str, settings: dict) -> dict | None:
     }
 
 
+def _read_last_bytes(filepath: str, num_bytes: int) -> list[str]:
+    """
+    Baca num_bytes terakhir dari file besar secara efisien (tidak perlu scan dari depan).
+    Kembalikan sebagai list of lines.
+    """
+    with open(filepath, "rb") as f:
+        f.seek(0, 2)  # Ke akhir file
+        file_size = f.tell()
+        read_size = min(num_bytes, file_size)
+        f.seek(-read_size, 2)
+        raw = f.read(read_size)
+    lines = raw.decode("utf-8", errors="replace").splitlines()
+    return lines
+
+
 async def load_historical_alerts():
     """
-    Baca eve.json dari awal dan muat alert 3 hari terakhir ke recent_alerts.
-    Dipanggil 1x saat startup sebelum tail dimulai.
+    Baca 50MB terakhir eve.json (bukan dari awal!) untuk muat alert 3 hari terakhir.
+    Jauh lebih cepat untuk file besar (eve.json kamu 742MB).
     """
     if not os.path.exists(EVE_LOG_PATH):
         return
@@ -369,38 +385,50 @@ async def load_historical_alerts():
     from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(days=3)
     settings = load_settings()
+    # Naikkan severity sementara ke 3 biar semua alert tertangkap
+    settings["severity"] = max(settings.get("severity", 3), 3)
     loaded = 0
 
-    log.info("Memuat alert historis 3 hari terakhir dari eve.json...")
+    log.info("Memuat alert historis 3 hari terakhir (baca 50MB terakhir eve.json)...")
     temp_alerts = []
 
-    async with aiofiles.open(EVE_LOG_PATH, "r") as f:
-        async for line in f:
-            payload = _parse_alert_line(line, settings)
-            if not payload:
+    # Baca 50MB terakhir dari file — cukup untuk beberapa hari log
+    READ_BYTES = 50 * 1024 * 1024  # 50 MB
+    try:
+        lines = await asyncio.get_event_loop().run_in_executor(
+            None, _read_last_bytes, EVE_LOG_PATH, READ_BYTES
+        )
+    except Exception as e:
+        log.error(f"Gagal baca eve.json untuk historis: {e}")
+        return
+
+    for line in lines:
+        payload = _parse_alert_line(line, settings)
+        if not payload:
+            continue
+
+        # Filter hanya 3 hari terakhir
+        try:
+            ts_dt = datetime.fromisoformat(payload["timestamp"].replace("Z", "+00:00"))
+            if ts_dt < cutoff:
                 continue
+        except Exception:
+            pass
 
-            # Filter hanya 3 hari terakhir
-            try:
-                ts_dt = datetime.fromisoformat(payload["timestamp"].replace("Z", "+00:00"))
-                if ts_dt < cutoff:
-                    continue
-            except Exception:
-                pass
+        stats["total_alerts"] += 1
+        alert_counts[payload["src_ip"]] += 1
+        payload["count"]     = alert_counts[payload["src_ip"]]
+        payload["threshold"] = settings.get("threshold", 3)
+        temp_alerts.append(payload)
+        loaded += 1
 
-            # Update stats & counts (tidak broadcast, tidak kirim webhook)
-            stats["total_alerts"] += 1
-            alert_counts[payload["src_ip"]] += 1
-            payload["count"] = alert_counts[payload["src_ip"]]
-            payload["threshold"] = settings.get("threshold", 3)
-            temp_alerts.append(payload)
-            loaded += 1
-
-    # Masukkan ke recent_alerts (urutan terbaru di depan, deque maxlen=200)
+    # Masukkan ke recent_alerts urut lama→baru (deque maxlen=200, terbaru di depan)
     for p in temp_alerts:
         recent_alerts.appendleft(p)
 
     log.info(f"Selesai memuat {loaded} alert historis ke Live Feed.")
+
+
 
 
 async def tail_eve():
