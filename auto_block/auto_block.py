@@ -30,7 +30,7 @@ import httpx
 # ─── Config ───────────────────────────────────────────────────────────────────
 EVE_LOG_PATH    = os.getenv("EVE_LOG_PATH",    "/var/log/suricata/eve.json")
 BLOCK_THRESHOLD = int(os.getenv("BLOCK_THRESHOLD", "3"))
-ALERT_SEVERITY  = int(os.getenv("ALERT_SEVERITY",  "2"))
+ALERT_SEVERITY  = int(os.getenv("ALERT_SEVERITY",  "3"))
 DASHBOARD_URL   = os.getenv("DASHBOARD_URL",   "http://127.0.0.1:8080")
 BLOCKED_LOG     = "/app/blocked_ips.log"
 STATE_FILE      = "/app/alert_counts.json"
@@ -86,7 +86,7 @@ def get_dynamic_whitelist() -> set:
 # ─── Dynamic Settings ─────────────────────────────────────────────────────────
 last_settings_fetch = 0
 current_threshold = int(os.getenv("BLOCK_THRESHOLD", "3"))
-current_severity = int(os.getenv("ALERT_SEVERITY", "2"))
+current_severity = int(os.getenv("ALERT_SEVERITY", "3"))
 
 def update_dynamic_settings():
     global current_threshold, current_severity, last_settings_fetch
