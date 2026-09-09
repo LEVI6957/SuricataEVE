@@ -1102,6 +1102,23 @@
             };
         }
 
+        // ── Load Alert Historis saat pertama buka halaman ─────────────────────
+        async function loadInitialAlerts() {
+            try {
+                const r = await fetch('/api/alerts?limit=200');
+                if (!r.ok) return;
+                const alerts = await r.json();
+                // Tampilkan dari yang paling lama ke paling baru (prepend)
+                // agar urutan di feed: terbaru di atas
+                const reversed = [...alerts].reverse();
+                for (const ev of reversed) {
+                    prependAlert(ev);
+                }
+            } catch (e) {
+                console.warn('Gagal load alert historis:', e);
+            }
+        }
+
         // ── Handle incoming event ─────────────────
         function handleEvent(ev) {
             if (ev.type === 'alert' || ev.type === 'blocked') {
@@ -1743,12 +1760,14 @@
             refreshWebhookLog();
             loadWhitelist();
             pollStats();
+            loadInitialAlerts(); // Muat alert historis 3 hari dari server
             if (!window.pollInterval) {
                 window.pollInterval = setInterval(pollStats, 2000);
                 window.whInterval   = setInterval(refreshWebhookLog, 15000);
                 window.lineInterval = setInterval(tickAlertMinute, 10000);
             }
         }
+
 
         checkAuth();
     </script>

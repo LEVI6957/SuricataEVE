@@ -635,6 +635,12 @@ async def get_blocked():
     return blocked_ips
 
 
+@app.get("/api/alerts")
+async def get_alerts(limit: int = 200):
+    """Kembalikan alert historis dari memori (max 200, urutan terbaru duluan)."""
+    return list(recent_alerts)[:limit]
+
+
 # ─── Dynamic Whitelist ────────────────────────────────────────────────────────
 WHITELIST_FILE = "whitelist.json"
 dynamic_whitelist = set()
