@@ -324,8 +324,11 @@ def load_initial_blocked():
 
 
 # ─── Eve.json Tail Task ───────────────────────────────────────────────────────
-def _parse_alert_line(line: str, settings: dict) -> dict | None:
-    """Parse satu baris eve.json dan kembalikan alert_payload jika valid, else None."""
+def _parse_alert_line(line: str, settings: dict, check_whitelist: bool = False) -> dict | None:
+    """Parse satu baris eve.json dan kembalikan alert_payload jika valid, else None.
+    check_whitelist=True hanya untuk live tail (cegah notifikasi dari IP whitelisted).
+    Untuk tampilan historis, biarkan False agar semua alert muncul di Live Feed.
+    """
     line = line.strip()
     if not line:
         return None
@@ -346,7 +349,9 @@ def _parse_alert_line(line: str, settings: dict) -> dict | None:
     # FIX: Default severity filter dinaikkan ke 3 agar alert umum (scan, LFI, dsb) ikut tampil
     if severity > settings.get("severity", 3):
         return None
-    if src_ip in dynamic_whitelist:
+
+    # Whitelist hanya dicek untuk live tail — bukan untuk tampilan historis
+    if check_whitelist and src_ip in dynamic_whitelist:
         return None
 
     return {
@@ -403,7 +408,7 @@ async def load_historical_alerts():
         return
 
     for line in lines:
-        payload = _parse_alert_line(line, settings)
+        payload = _parse_alert_line(line, settings, check_whitelist=False)  # Tampilkan semua, tanpa filter whitelist
         if not payload:
             continue
 
@@ -455,7 +460,7 @@ async def tail_eve():
                 continue
 
             settings = load_settings()
-            payload = _parse_alert_line(line, settings)
+            payload = _parse_alert_line(line, settings, check_whitelist=True)  # Live: cegah notif dari IP whitelist
             if not payload:
                 continue
 
