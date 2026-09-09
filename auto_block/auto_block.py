@@ -96,7 +96,7 @@ def update_dynamic_settings():
             with open("/app/settings.json", "r") as f:
                 data = json.load(f)
                 current_threshold = data.get("threshold", int(os.getenv("BLOCK_THRESHOLD", "3")))
-                current_severity = data.get("severity", int(os.getenv("ALERT_SEVERITY", "2")))
+                current_severity = data.get("severity", int(os.getenv("ALERT_SEVERITY", "3")))
         except Exception:
             pass
         last_settings_fetch = now
