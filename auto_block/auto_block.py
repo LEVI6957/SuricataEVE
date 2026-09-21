@@ -393,19 +393,19 @@ def tail_eve_json(filepath: str):
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
+    # Baca settings.json dari dashboard saat startup sebelum nge-print banner
+    update_dynamic_settings()
+    
     log.info("=" * 58)
     log.info("  Suricata Auto Block Service (iptables mode)")
     log.info(f"  Eve JSON     : {EVE_LOG_PATH}")
     log.info(f"  Chain        : {IPTABLES_CHAIN}")
-    log.info(f"  Threshold    : {BLOCK_THRESHOLD} alerts")
-    log.info(f"  Min Severity : {ALERT_SEVERITY}")
+    log.info(f"  Threshold    : {current_threshold} alerts")
+    log.info(f"  Min Severity : {current_severity}")
     log.info(f"  Dashboard    : {DASHBOARD_URL}")
     log.info(f"  Whitelisted  : {sorted(WHITELIST_IPS)}")
     log.info("=" * 58)
 
-    # Baca settings.json dari dashboard saat startup (sebelum masuk loop)
-    update_dynamic_settings()
-    log.info(f"  Settings dashboard: threshold={current_threshold}, severity={current_severity}")
 
     load_state()
 
