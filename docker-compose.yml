@@ -5,6 +5,10 @@ services:
     container_name: suricata_main
     restart: unless-stopped
     network_mode: "host"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
     cap_add:
       - NET_ADMIN
       - NET_RAW
@@ -16,7 +20,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     # Interface utama + loopback. Checksum dimatikan agar bisa mendeteksi serangan dari localhost
-    command: -i ${NET_IFACE:-enp86s0} -i lo --set stream.checksum-validation=no
+    command: -i ${NET_IFACE:-eth0} -i lo --set stream.checksum-validation=no
 
   evebox:
     image: jasonish/evebox:latest
@@ -24,6 +28,10 @@ services:
     restart: on-failure
     user: "root"
     network_mode: "host"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     volumes:
       - ./logs:/var/log/suricata:ro # Baca log dari host (read-only)
       - evebox-data:/var/lib/evebox
@@ -41,10 +49,13 @@ services:
     container_name: auto_block
     restart: unless-stopped
     network_mode: "host"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     cap_add:
       - NET_ADMIN      # Diperlukan untuk iptables
       - NET_RAW
-    privileged: true   # Diperlukan agar bisa akses iptables host
     volumes:
       - ./logs:/var/log/suricata:ro                          # Baca eve.json
       - ./auto_block/blocked_ips.log:/app/blocked_ips.log   # Log IP diblok
@@ -69,9 +80,12 @@ services:
     container_name: suricata_dashboard
     restart: unless-stopped
     network_mode: "host"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     cap_add:
       - NET_ADMIN
-    privileged: true
     volumes:
       - ./logs:/var/log/suricata:ro                          # Baca eve.json
       - ./auto_block/blocked_ips.log:/app/blocked_ips.log   # Baca log IP diblok
@@ -85,18 +99,11 @@ services:
       - EVE_LOG_PATH=/var/log/suricata/eve.json
       - BLOCKED_LOG=/app/blocked_ips.log
       - ALERT_COUNTS=/app/alert_counts.json
-      - DASHBOARD_USER=${DASHBOARD_USER:-admin}
-      - DASHBOARD_PASS=${DASHBOARD_PASS:-admin123}
     command: >
-      uvicorn app:app --host ${SERVER_IP:-0.0.0.0} --port ${DASHBOARD_PORT:-8080} --log-level info
+      uvicorn app:app --host 0.0.0.0 --port ${DASHBOARD_PORT:-8080} --log-level info
     depends_on:
       - suricata
 
-  dvwa:
-    image: vulnerables/web-dvwa
-    container_name: dvwa
-    restart: unless-stopped
-    network_mode: "host"
 
 volumes:
   suricata-rules:

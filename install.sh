@@ -11,6 +11,8 @@ set -euo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
+
+
 info()    { echo -e "${CYAN}[INFO]${NC}  $*"; }
 success() { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
@@ -49,23 +51,13 @@ echo -e "  IP Server    : ${GREEN}${DEFAULT_IP}${NC}"
 echo -e "  Interface    : ${GREEN}${DEFAULT_IFACE}${NC}"
 echo ""
 
-read -rp "$(echo -e "${BOLD}IP server untuk dashboard${NC} [${DEFAULT_IP}]: ")" SERVER_IP
-SERVER_IP="${SERVER_IP:-$DEFAULT_IP}"
-
-read -rp "$(echo -e "${BOLD}Port dashboard${NC} [${DEFAULT_PORT}]: ")" DASHBOARD_PORT
-DASHBOARD_PORT="${DASHBOARD_PORT:-$DEFAULT_PORT}"
-
-read -rp "$(echo -e "${BOLD}Network interface Suricata${NC} [${DEFAULT_IFACE}]: ")" NET_IFACE
-NET_IFACE="${NET_IFACE:-$DEFAULT_IFACE}"
-
-read -rp "$(echo -e "${BOLD}Webhook URL (Telegram/Discord/Slack, kosongkan=skip)${NC}: ")" WEBHOOK_URL
-WEBHOOK_URL="${WEBHOOK_URL:-}"
-
-read -rp "$(echo -e "${BOLD}Block threshold (jumlah alert sebelum blok)${NC} [3]: ")" BLOCK_THRESHOLD
-BLOCK_THRESHOLD="${BLOCK_THRESHOLD:-3}"
-
-read -rp "$(echo -e "${BOLD}Min severity (1=High 2=Medium 3=Low)${NC} [2]: ")" ALERT_SEVERITY
-ALERT_SEVERITY="${ALERT_SEVERITY:-2}"
+echo -e "${GREEN}Menggunakan nilai default untuk semua konfigurasi secara otomatis.${NC}"
+SERVER_IP="${DEFAULT_IP}"
+DASHBOARD_PORT="${DEFAULT_PORT}"
+NET_IFACE="${DEFAULT_IFACE}"
+WEBHOOK_URL=""
+BLOCK_THRESHOLD="3"
+ALERT_SEVERITY="2"
 
 echo ""
 echo -e "${BOLD}Ringkasan konfigurasi:${NC}"
@@ -75,8 +67,6 @@ echo -e "  Threshold    : ${BLOCK_THRESHOLD} alerts"
 echo -e "  Severity     : ${ALERT_SEVERITY}"
 echo -e "  Webhook      : ${WEBHOOK_URL:-tidak dikonfigurasi}"
 echo ""
-read -rp "$(echo -e "${BOLD}Lanjutkan? [Y/n]: ${NC}")" CONFIRM
-[[ "${CONFIRM,,}" == "n" ]] && echo "Dibatalkan." && exit 0
 
 # ══════════════════════════════════════════════════════════════════════════════
 header "2. Install Dependencies"
@@ -136,9 +126,6 @@ mkdir -p logs
 touch logs/eve.json                   # EveBox butuh folder ini ada
 touch auto_block/blocked_ips.log      # Dashboard & auto_block baca file ini
 echo '{}' > auto_block/alert_counts.json  # State persistensi counter IP
-if [[ ! -f dashboard/settings.json ]]; then
-    touch dashboard/settings.json
-fi
 if [[ ! -f dashboard/whitelist.json ]]; then
     echo '[]' > dashboard/whitelist.json
 fi
@@ -151,7 +138,9 @@ if [[ ! -f dashboard/settings.json ]]; then
   "webhook_headers": {},
   "threshold": ${BLOCK_THRESHOLD},
   "severity": ${ALERT_SEVERITY},
-  "interval": 10
+  "interval": 10,
+  "secret_token": "",
+  "telegram_chat_id": ""
 }
 SETTINGS
     success "File dashboard/settings.json dibuat"
@@ -193,9 +182,35 @@ ufw --force enable
 # Izinkan SSH agar tidak terkunci
 ufw allow OpenSSH
 ufw allow "${DASHBOARD_PORT}/tcp" comment "Suricata Dashboard"
-ufw allow "5636/tcp"              comment "EveBox UI"
+# EveBox (5636) dihapus dari izin internet publik untuk keamanan
 
-success "UFW dikonfigurasi (SSH + Dashboard + EveBox diizinkan)"
+success "UFW dikonfigurasi (SSH + Dashboard diizinkan)"
+
+# ══════════════════════════════════════════════════════════════════════════════
+header "5.5 Setup Logrotate (Mencegah Disk Penuh)"
+# ══════════════════════════════════════════════════════════════════════════════
+
+info "Membuat konfigurasi logrotate untuk Suricata..."
+cat > /etc/logrotate.d/suricata-eve << EOF
+${INSTALL_DIR}/logs/eve.json
+${INSTALL_DIR}/logs/suricata.log
+${INSTALL_DIR}/logs/fast.log
+${INSTALL_DIR}/auto_block/blocked_ips.log
+{
+    daily
+    rotate 7
+    missingok
+    compress
+    delaycompress
+    notifempty
+    create 0640 root root
+    sharedscripts
+    postrotate
+        docker restart suricata_main > /dev/null 2>&1 || true
+    endscript
+}
+EOF
+success "Logrotate dikonfigurasi (rotasi 7 hari)"
 
 # ══════════════════════════════════════════════════════════════════════════════
 header "6. Build & Jalankan Docker"

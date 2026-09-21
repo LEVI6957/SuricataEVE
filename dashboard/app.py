@@ -7,6 +7,7 @@ Author: Levi (github.com/LEVI6957)
 
 import asyncio
 import ipaddress
+import hashlib
 import json
 import logging
 import os
@@ -14,11 +15,12 @@ import subprocess
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-import aiofiles
-import httpx
+import secrets
+import urllib.request
+import urllib.error
 from fastapi import (
     FastAPI, WebSocket, WebSocketDisconnect,
     HTTPException, Request, Header, Depends
@@ -28,15 +30,15 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ─── Config ───────────────────────────────────────────────────────────────────
-EVE_LOG_PATH  = os.getenv("EVE_LOG_PATH",  "/var/log/suricata/eve.json")
-BLOCKED_LOG   = os.getenv("BLOCKED_LOG",   "/app/blocked_ips.log")
-ALERT_COUNTS  = os.getenv("ALERT_COUNTS",  "/app/alert_counts.json")
-SETTINGS_FILE = os.getenv("SETTINGS_FILE", "/app/settings.json")
+EVE_LOG_PATH   = os.getenv("EVE_LOG_PATH",   "/var/log/suricata/eve.json")
+BLOCKED_LOG    = os.getenv("BLOCKED_LOG",    "/app/blocked_ips.log")
+ALERT_COUNTS   = os.getenv("ALERT_COUNTS",   "/app/alert_counts.json")
+SETTINGS_FILE  = os.getenv("SETTINGS_FILE",  "/app/settings.json")
+WHITELIST_FILE = os.getenv("WHITELIST_FILE", "/app/whitelist.json")
 IPTABLES_CHAIN = "SURICATA_BLOCK"
 
-# ─── Kredensial Login (dibaca dari environment variable) ─────────────────────
-DASHBOARD_USER = os.getenv("DASHBOARD_USER", "admin")
-DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "admin123")
+# ─── Kredensial Login ───────────────────────────────────────────────────────────
+# Kredensial dibaca/disimpan dari settings.json (Setup Wizard)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,10 +49,14 @@ log = logging.getLogger("dashboard")
 # ─── In-memory State ──────────────────────────────────────────────────────────
 recent_alerts: deque = deque(maxlen=200)
 blocked_ips: list[dict] = []
-alert_counts: dict = defaultdict(int)
+alert_counts: dict = {}  # Format: {"ip": {"count": X, "last_seen": timestamp}}
 stats = {"total_alerts": 0, "total_blocked": 0, "start_time": time.time()}
 ws_clients: list[WebSocket] = []
 webhook_log: deque = deque(maxlen=50)
+
+# ─── Dynamic Whitelist ────────────────────────────────────────────────────────
+# Harus didefinisikan sebelum _parse_alert_line yang mereferensikannya
+dynamic_whitelist: set = set()
 
 
 # ─── Settings Helper ──────────────────────────────────────────────────────────
@@ -63,8 +69,8 @@ def load_settings() -> dict:
             "webhook_url": "",
             "webhook_headers": {},
             "threshold": 3,
-            "severity": 2,
-            "interval": 10,
+            "severity": 3,
+            "interval": 1,
             "secret_token": "",
             "telegram_chat_id": "",
         }
@@ -73,6 +79,25 @@ def load_settings() -> dict:
 def save_settings(data: dict):
     with open(SETTINGS_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
+
+# ─── Whitelist Helper ─────────────────────────────────────────────────────────
+def load_whitelist():
+    global dynamic_whitelist
+    try:
+        if os.path.exists(WHITELIST_FILE):
+            with open(WHITELIST_FILE, "r") as f:
+                dynamic_whitelist = set(json.load(f))
+    except Exception as e:
+        log.error(f"Gagal load whitelist: {e}")
+
+
+def save_whitelist():
+    try:
+        with open(WHITELIST_FILE, "w") as f:
+            json.dump(list(dynamic_whitelist), f)
+    except Exception as e:
+        log.error(f"Gagal simpan whitelist: {e}")
 
 
 # ─── WebSocket Broadcaster ────────────────────────────────────────────────────
@@ -98,28 +123,27 @@ def _format_discord_payload(payload: dict) -> dict:
     sev   = payload.get("severity", "N/A")
     ts    = payload.get("timestamp", "")
 
-    # Pilih warna berdasarkan event type
     color = {
-        "BLOCKED":          0xEF4444,   # merah
-        "HIGH_ALERT":       0xF59E0B,   # kuning
-        "TEST":             0x6366F1,   # ungu
-        "WHITELIST_ADD":    0x22C55E,   # hijau
-        "WHITELIST_REMOVE": 0xF97316,   # orange
-        "UNBLOCKED":        0x3B82F6,   # biru
-        "LOGIN":            0xFCD34D,   # emas terang
-        "LOGOUT":           0x9CA3AF,   # abu-abu
+        "BLOCKED":          0xEF4444,
+        "HIGH_ALERT":       0xF59E0B,
+        "TEST":             0x6366F1,
+        "WHITELIST_ADD":    0x22C55E,
+        "WHITELIST_REMOVE": 0xF97316,
+        "UNBLOCKED":        0x3B82F6,
+        "LOGIN":            0xFCD34D,
+        "LOGOUT":           0x9CA3AF,
     }.get(event, 0x64748B)
 
     title_icon = {
-        "BLOCKED":          "🔒 IP Diblok",
-        "HIGH_ALERT":       "⚠️ High Alert",
-        "TEST":             "🧪 Test Webhook",
-        "WHITELIST_ADD":    "✅ Masuk Whitelist",
-        "WHITELIST_REMOVE": "❌ Keluar Whitelist",
-        "UNBLOCKED":        "🔓 IP Dibebaskan",
-        "LOGIN":            "🎉😎🔥 BOS LOGIN CUI!! 🔥😎🎉",
-        "LOGOUT":           "YAAAHHH BOS LOG OUT SAD!!! 😭😭😭💔💔",
-    }.get(event, f"📡 {event}")
+        "BLOCKED":          "\U0001f512 IP Diblok",
+        "HIGH_ALERT":       "\u26a0\ufe0f High Alert",
+        "TEST":             "\U0001f9ea Test Webhook",
+        "WHITELIST_ADD":    "\u2705 Masuk Whitelist",
+        "WHITELIST_REMOVE": "\u274c Keluar Whitelist",
+        "UNBLOCKED":        "\U0001f513 IP Dibebaskan",
+        "LOGIN":            "\U0001f389\U0001f60e\U0001f525 BOS LOGIN CUI!! \U0001f525\U0001f60e\U0001f389",
+        "LOGOUT":           "YAAAHHH BOS LOG OUT SAD!!! \U0001f62d\U0001f62d\U0001f62d\U0001f494\U0001f494",
+    }.get(event, f"\U0001f4e1 {event}")
 
     embed = {
         "title": title_icon,
@@ -154,23 +178,23 @@ def _format_telegram_payload(payload: dict, chat_id: str) -> dict:
     ts    = payload.get("timestamp", datetime.now(timezone.utc).isoformat())
 
     icon = {
-        "BLOCKED":          "🔒",
-        "HIGH_ALERT":       "⚠️",
-        "TEST":             "🧪",
-        "WHITELIST_ADD":    "✅",
-        "WHITELIST_REMOVE": "❌",
-        "UNBLOCKED":        "🔓",
-        "LOGIN":            "🎉",
-        "LOGOUT":           "👋",
-    }.get(event, "📡")
+        "BLOCKED":          "\U0001f512",
+        "HIGH_ALERT":       "\u26a0\ufe0f",
+        "TEST":             "\U0001f9ea",
+        "WHITELIST_ADD":    "\u2705",
+        "WHITELIST_REMOVE": "\u274c",
+        "UNBLOCKED":        "\U0001f513",
+        "LOGIN":            "\U0001f389",
+        "LOGOUT":           "\U0001f44b",
+    }.get(event, "\U0001f4e1")
 
-    lines = [f"{icon} <b>Suricata — {event}</b>"]
-    if ip:  lines.append(f"🌐 IP: <code>{ip}</code>")
-    if sig: lines.append(f"📋 Signature: {sig[:200]}")
-    if sev: lines.append(f"🎯 Severity: {sev}")
-    if payload.get("hit_count"): lines.append(f"🔢 Hit Count: {payload['hit_count']}")
-    if msg: lines.append(f"ℹ️ {msg}")
-    lines.append(f"🕐 {ts}")
+    lines = [f"{icon} <b>Suricata \u2014 {event}</b>"]
+    if ip:  lines.append(f"\U0001f310 IP: <code>{ip}</code>")
+    if sig: lines.append(f"\U0001f4cb Signature: {sig[:200]}")
+    if sev: lines.append(f"\U0001f3af Severity: {sev}")
+    if payload.get("hit_count"): lines.append(f"\U0001f522 Hit Count: {payload['hit_count']}")
+    if msg: lines.append(f"\u2139\ufe0f {msg}")
+    lines.append(f"\U0001f550 {ts}")
 
     return {
         "chat_id":    chat_id,
@@ -189,7 +213,6 @@ async def send_webhook(payload: dict):
     headers = {"Content-Type": "application/json"}
     headers.update(settings.get("webhook_headers", {}))
 
-    # ── Deteksi platform & format payload ──────────────────────────────────────
     is_discord  = "discord.com/api/webhooks" in url or "discordapp.com" in url
     is_slack    = "hooks.slack.com" in url
     is_telegram = "api.telegram.org" in url
@@ -197,37 +220,47 @@ async def send_webhook(payload: dict):
     if is_discord:
         body = _format_discord_payload(payload)
     elif is_slack:
-        # Slack incoming webhook format
         event = payload.get("event", "EVENT")
         ip    = payload.get("ip", "N/A")
         sig   = payload.get("signature", "")
-        body  = {
-            "text": f"*{event}* — IP: `{ip}`\n>{sig}"
-        }
+        body  = {"text": f"*{event}* \u2014 IP: `{ip}`\n>{sig}"}
     elif is_telegram:
-        # Telegram Bot API — butuh chat_id dari settings
         chat_id = settings.get("telegram_chat_id", "").strip()
         if not chat_id:
             log.warning("Telegram webhook: telegram_chat_id belum diset di settings!")
             return
         body = _format_telegram_payload(payload, chat_id)
     else:
-        # Generic JSON — custom endpoint
         body = payload
 
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    result_entry = {"timestamp": ts, "url": url, "status": None, "error": None}
+    result_entry: dict = {"timestamp": ts, "url": url, "status": None, "error": None}
+
+    req = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), headers=headers, method="POST")
 
     for attempt in range(1, 4):
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.post(url, json=body, headers=headers)
-                result_entry["status"] = r.status_code
-                if r.status_code < 400:
-                    log.info(f"Webhook OK [{r.status_code}]: {url}")
-                    break
-                else:
-                    log.warning(f"Webhook gagal [{r.status_code}] attempt {attempt}: {r.text[:200]}")
+            def _do_post():
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    return response.status, response.read().decode('utf-8')
+            
+            status, text = await asyncio.to_thread(_do_post)
+            result_entry["status"] = status
+            if status < 400:
+                log.info(f"Webhook OK [{status}]: {url}")
+                break
+            else:
+                log.warning(f"Webhook gagal [{status}] attempt {attempt}: {text[:200]}")
+        except urllib.error.HTTPError as e:
+            result_entry["status"] = e.code
+            result_entry["error"] = str(e)
+            err_text = ""
+            try:
+                err_text = e.read().decode('utf-8')
+            except:
+                pass
+            log.warning(f"Webhook gagal [{e.code}] attempt {attempt}: {err_text[:200]}")
+            await asyncio.sleep(2 ** attempt)
         except Exception as e:
             result_entry["error"] = str(e)
             log.error(f"Webhook error attempt {attempt}: {e}")
@@ -236,21 +269,33 @@ async def send_webhook(payload: dict):
     webhook_log.appendleft(result_entry)
 
 
-# ─── iptables Helpers (untuk unblock dari dashboard) ─────────────────────────
+# ─── iptables Helpers ─────────────────────────────────────────────────────────
 def _ipt_unblock(ip: str) -> tuple[bool, str]:
     """Hapus rule iptables/ip6tables untuk IP dari chain SURICATA_BLOCK."""
-    # Deteksi IPv4 atau IPv6
     try:
         version = ipaddress.ip_address(ip).version
     except ValueError:
         version = 4
-    
     cmd = "iptables" if version == 4 else "ip6tables"
     result = subprocess.run(
         [cmd, "-D", IPTABLES_CHAIN, "-s", ip, "-j", "DROP"],
         capture_output=True, text=True
     )
     return result.returncode == 0, result.stderr.strip()
+
+
+def _ipt_block_ip(ip: str) -> bool:
+    """Block IP via iptables langsung dari dashboard (untuk brute force login)."""
+    try:
+        version = ipaddress.ip_address(ip).version
+    except ValueError:
+        version = 4
+    cmd = "iptables" if version == 4 else "ip6tables"
+    result = subprocess.run(
+        [cmd, "-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"],
+        capture_output=True, text=True
+    )
+    return result.returncode == 0
 
 
 # ─── State Sync Helper ────────────────────────────────────────────────────────
@@ -261,15 +306,14 @@ def update_state_unblock(ip: str):
     try:
         with open(ALERT_COUNTS, "r") as f:
             data = json.load(f)
-
         current_blocked = set(data.get("blocked_ips", []))
         current_blocked.discard(ip)
         data["blocked_ips"] = list(current_blocked)
-
-        # Reset counter jadi 0 agar tidak langsung diblok lagi
         if ip in data.get("alert_counts", {}):
-            data["alert_counts"][ip] = 0
-
+            if isinstance(data["alert_counts"][ip], dict):
+                data["alert_counts"][ip]["count"] = 0
+            else:
+                data["alert_counts"][ip] = 0
         with open(ALERT_COUNTS, "w") as f:
             json.dump(data, f)
     except Exception as e:
@@ -278,23 +322,24 @@ def update_state_unblock(ip: str):
 
 def load_initial_blocked():
     """Load blocked IPs dari state file + metadata dari log."""
-    global blocked_ips, alert_counts
+    global blocked_ips
     if not os.path.exists(ALERT_COUNTS):
         return
-
     try:
         with open(ALERT_COUNTS, "r") as f:
             data = json.load(f)
 
         saved_counts = data.get("alert_counts", {})
         for k, v in saved_counts.items():
-            alert_counts[k] = v
+            if isinstance(v, int):
+                alert_counts[k] = {"count": v, "last_seen": time.time()}
+            else:
+                alert_counts[k] = v
 
         blocked_set = set(data.get("blocked_ips", []))
         if not blocked_set:
             return
 
-        # Cari metadata dari log file
         meta_map = {}
         if os.path.exists(BLOCKED_LOG):
             with open(BLOCKED_LOG, "r") as f:
@@ -312,23 +357,19 @@ def load_initial_blocked():
                 "ip":        ip,
                 "timestamp": meta["ts"],
                 "signature": meta["sig"],
-                "count":     alert_counts.get(ip, 0),
+                "count":     alert_counts.get(ip, {}).get("count", 0) if isinstance(alert_counts.get(ip), dict) else alert_counts.get(ip, 0),
             })
 
         blocked_ips = new_list
         stats["total_blocked"] = len(blocked_ips)
         log.info(f"Loaded {len(blocked_ips)} blocked IPs from state.")
-
     except Exception as e:
         log.error(f"Gagal load initial state: {e}")
 
 
-# ─── Eve.json Tail Task ───────────────────────────────────────────────────────
-def _parse_alert_line(line: str, settings: dict, check_whitelist: bool = False) -> dict | None:
-    """Parse satu baris eve.json dan kembalikan alert_payload jika valid, else None.
-    check_whitelist=True hanya untuk live tail (cegah notifikasi dari IP whitelisted).
-    Untuk tampilan historis, biarkan False agar semua alert muncul di Live Feed.
-    """
+# ─── Eve.json Parser ──────────────────────────────────────────────────────────
+def _parse_alert_line(line: str, settings: dict, check_whitelist: bool = False) -> Optional[dict]:
+    """Parse satu baris eve.json dan kembalikan alert_payload jika valid, else None."""
     line = line.strip()
     if not line:
         return None
@@ -346,11 +387,9 @@ def _parse_alert_line(line: str, settings: dict, check_whitelist: bool = False) 
     category  = event.get("alert", {}).get("category", "N/A")
     ts        = event.get("timestamp", datetime.now(timezone.utc).isoformat())
 
-    # FIX: Default severity filter dinaikkan ke 3 agar alert umum (scan, LFI, dsb) ikut tampil
     if severity > settings.get("severity", 3):
         return None
 
-    # Whitelist hanya dicek untuk live tail — bukan untuk tampilan historis
     if check_whitelist and src_ip in dynamic_whitelist:
         return None
 
@@ -365,39 +404,29 @@ def _parse_alert_line(line: str, settings: dict, check_whitelist: bool = False) 
 
 
 def _read_last_bytes(filepath: str, num_bytes: int) -> list[str]:
-    """
-    Baca num_bytes terakhir dari file besar secara efisien (tidak perlu scan dari depan).
-    Kembalikan sebagai list of lines.
-    """
+    """Baca num_bytes terakhir dari file besar secara efisien."""
     with open(filepath, "rb") as f:
-        f.seek(0, 2)  # Ke akhir file
+        f.seek(0, 2)
         file_size = f.tell()
         read_size = min(num_bytes, file_size)
         f.seek(-read_size, 2)
         raw = f.read(read_size)
-    lines = raw.decode("utf-8", errors="replace").splitlines()
-    return lines
+    return raw.decode("utf-8", errors="replace").splitlines()
 
 
+# ─── Historical Alert Loader ──────────────────────────────────────────────────
 async def load_historical_alerts():
-    """
-    Baca 50MB terakhir eve.json (bukan dari awal!) untuk muat alert 3 hari terakhir.
-    Jauh lebih cepat untuk file besar (eve.json kamu 742MB).
-    """
+    """Baca 300MB terakhir eve.json untuk muat alert 3 hari terakhir."""
     if not os.path.exists(EVE_LOG_PATH):
         return
 
-    from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(days=3)
     settings = load_settings()
-    # Naikkan severity sementara ke 3 biar semua alert tertangkap
-    settings["severity"] = max(settings.get("severity", 3), 3)
     loaded = 0
 
     log.info("Memuat alert historis 3 hari terakhir (baca 300MB terakhir eve.json)...")
-    temp_alerts = []
+    temp_alerts: list[dict] = []
 
-    # Perbesar ke 300MB agar cukup menampung beberapa hari log dari file 742MB
     READ_BYTES = 300 * 1024 * 1024  # 300 MB
     try:
         lines = await asyncio.get_event_loop().run_in_executor(
@@ -408,11 +437,9 @@ async def load_historical_alerts():
         return
 
     for line in lines:
-        payload = _parse_alert_line(line, settings, check_whitelist=False)  # Tampilkan semua, tanpa filter whitelist
+        payload = _parse_alert_line(line, settings, check_whitelist=False)
         if not payload:
             continue
-
-        # Filter hanya 3 hari terakhir
         try:
             ts_dt = datetime.fromisoformat(payload["timestamp"].replace("Z", "+00:00"))
             if ts_dt < cutoff:
@@ -421,63 +448,61 @@ async def load_historical_alerts():
             pass
 
         stats["total_alerts"] += 1
-        alert_counts[payload["src_ip"]] += 1
-        payload["count"]     = alert_counts[payload["src_ip"]]
+        src_ip = payload.get("src_ip", "")
+        if src_ip not in alert_counts: alert_counts[src_ip] = {"count": 0, "last_seen": time.time()}
+        alert_counts[src_ip]["count"] += 1
+        alert_counts[src_ip]["last_seen"] = time.time()
+        payload["count"] = alert_counts[src_ip]["count"]
         payload["threshold"] = settings.get("threshold", 3)
         temp_alerts.append(payload)
         loaded += 1
 
-    # Masukkan ke recent_alerts urut lama→baru (deque maxlen=200, terbaru di depan)
     for p in temp_alerts:
         recent_alerts.appendleft(p)
 
     log.info(f"Selesai memuat {loaded} alert historis ke Live Feed.")
 
 
-
-
+# ─── Eve.json Live Tail Task ──────────────────────────────────────────────────
 async def tail_eve():
     """
     Background task: tail eve.json dan tampilkan alert di dashboard.
-    CATATAN: Blocking iptables dilakukan oleh auto_block.py, bukan di sini.
-             Dashboard hanya membaca untuk tampilan Live Feed.
+    Blocking iptables dilakukan oleh auto_block.py, bukan di sini.
     """
     while not os.path.exists(EVE_LOG_PATH):
         log.info(f"Menunggu {EVE_LOG_PATH} ...")
         await asyncio.sleep(5)
 
-    # Muat alert historis 3 hari terakhir saat startup
     await load_historical_alerts()
 
     log.info(f"Mulai memantau (tail) {EVE_LOG_PATH} untuk alert baru...")
 
-    async with aiofiles.open(EVE_LOG_PATH, "r") as f:
-        await f.seek(0, 2)  # Loncat ke akhir file — hanya pantau yang baru
+    with open(EVE_LOG_PATH, "r") as f:
+        f.seek(0, 2)
         while True:
-            line = await f.readline()
+            line = await asyncio.to_thread(f.readline)
             if not line:
-                await asyncio.sleep(0.3)
+                settings = load_settings()
+                poll_interval = max(0.1, settings.get("interval", 1))
+                await asyncio.sleep(poll_interval)
                 continue
 
             settings = load_settings()
-            # Paksa severity min 3 agar konsisten dengan historical load
-            settings["severity"] = max(settings.get("severity", 3), 3)
-            payload = _parse_alert_line(line, settings, check_whitelist=True)  # Live: cegah notif dari IP whitelist
+            payload = _parse_alert_line(line, settings, check_whitelist=True)
             if not payload:
                 continue
 
-            # Update stats & alert counts
             stats["total_alerts"] += 1
-            alert_counts[payload["src_ip"]] += 1
-            payload["count"]     = alert_counts[payload["src_ip"]]
+            src_ip = payload.get("src_ip", "")
+            if src_ip not in alert_counts: alert_counts[src_ip] = {"count": 0, "last_seen": time.time()}
+            alert_counts[src_ip]["count"] += 1
+            alert_counts[src_ip]["last_seen"] = time.time()
+            payload["count"] = alert_counts[src_ip]["count"]
             payload["threshold"] = settings.get("threshold", 3)
 
             recent_alerts.appendleft(payload)
-
-            # Broadcast ke UI (live feed)
             await broadcast(payload)
 
-            # Kirim webhook untuk high/medium severity (1 atau 2) pertama kali
             if payload["severity"] <= 2 and payload["count"] == 1:
                 await send_webhook({
                     "event":     "HIGH_ALERT",
@@ -509,99 +534,120 @@ def verify_token(x_token: Optional[str] = Header(default=None)):
     settings = load_settings()
     secret = settings.get("secret_token", "").strip()
     if not secret:
-        return  # Token tidak dikonfigurasi, skip auth
-    if x_token != secret and x_token != "levi_token":
+        raise HTTPException(status_code=401, detail="Dashboard belum di-setup (secret kosong).")
+    if x_token != secret:
         raise HTTPException(status_code=403, detail="Invalid token")
 
 
 # ─── Brute Force Protection ──────────────────────────────────────────────────
-# Track percobaan login gagal per IP: {ip: {"count": int, "blocked": bool}}
 login_fail_tracker: dict = defaultdict(lambda: {"count": 0, "blocked": False})
-LOGIN_MAX_ATTEMPTS = 5  # Blok setelah 5x gagal
+LOGIN_MAX_ATTEMPTS = 5
 
-def _ipt_block_ip(ip: str) -> bool:
-    """Block IP via iptables langsung dari dashboard (untuk brute force login)."""
-    try:
-        version = ipaddress.ip_address(ip).version
-    except ValueError:
-        version = 4
-    cmd = "iptables" if version == 4 else "ip6tables"
-    result = subprocess.run(
-        [cmd, "-I", IPTABLES_CHAIN, "1", "-s", ip, "-j", "DROP"],
-        capture_output=True, text=True
-    )
-    return result.returncode == 0
 
 class LoginRequest(BaseModel):
     username: str
     password: str
 
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+@app.get("/api/setup/status")
+async def setup_status():
+    settings = load_settings()
+    admin_user = settings.get("admin_username")
+    admin_pass = settings.get("admin_password_hash")
+    if not admin_user or not admin_pass:
+        return {"setup_required": True}
+    return {"setup_required": False}
+
+@app.post("/api/setup")
+async def setup(req: LoginRequest):
+    settings = load_settings()
+    if settings.get("admin_username") and settings.get("admin_password_hash"):
+        raise HTTPException(status_code=400, detail="Setup sudah dilakukan.")
+    
+    settings["admin_username"] = req.username
+    settings["admin_password_hash"] = hash_password(req.password)
+    if not settings.get("secret_token"):
+        settings["secret_token"] = secrets.token_hex(32)
+    save_settings(settings)
+    return {"status": "ok", "message": "Setup berhasil"}
+
 @app.post("/api/login")
 async def login(req: LoginRequest, request: Request):
-    # Ambil IP penyerang
     client_ip = request.client.host if request.client else "unknown"
 
-    # Cek apakah IP ini sudah diblok karena brute force
     tracker = login_fail_tracker[client_ip]
     if tracker["blocked"]:
         raise HTTPException(status_code=429, detail="IP Anda diblokir karena terlalu banyak percobaan login gagal.")
 
-    if req.username == DASHBOARD_USER and req.password == DASHBOARD_PASS:
-        # Reset counter jika login berhasil
+    settings = load_settings()
+    admin_user = settings.get("admin_username")
+    admin_pass = settings.get("admin_password_hash")
+
+    if not admin_user or not admin_pass:
+        raise HTTPException(status_code=500, detail="Dashboard belum di-setup.")
+
+    if req.username == admin_user and hash_password(req.password) == admin_pass:
         login_fail_tracker[client_ip] = {"count": 0, "blocked": False}
         asyncio.create_task(send_webhook({
             "event": "LOGIN",
-            "message": f"Login berhasil dari {client_ip} — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            "message": f"Login berhasil dari {client_ip} \u2014 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
         }))
-        return {"status": "ok", "token": "levi_token"}
+        
+        secret = settings.get("secret_token", "").strip()
+        if not secret:
+            secret = secrets.token_hex(32)
+            settings["secret_token"] = secret
+            save_settings(settings)
+            
+        return {"status": "ok", "token": secret}
 
-    # Login gagal — tambah counter
+    # OOM Protection
+    if len(login_fail_tracker) > 1000:
+        login_fail_tracker.clear()
+
     tracker["count"] += 1
     attempts_left = LOGIN_MAX_ATTEMPTS - tracker["count"]
-    log.warning(f"❌ Login gagal dari {client_ip} — percobaan {tracker['count']}/{LOGIN_MAX_ATTEMPTS}")
+    log.warning(f"Login gagal dari {client_ip} \u2014 percobaan {tracker['count']}/{LOGIN_MAX_ATTEMPTS}")
 
     if tracker["count"] >= LOGIN_MAX_ATTEMPTS:
         tracker["blocked"] = True
-        log.warning(f"🚫 BRUTE FORCE TERDETEKSI! IP: {client_ip}")
+        log.warning(f"BRUTE FORCE TERDETEKSI! IP: {client_ip}")
 
-        # Jangan blokir jika IP ada di whitelist (mencegah admin lock diri sendiri)
         if client_ip in dynamic_whitelist:
-            log.warning(f"⚠️  {client_ip} ada di whitelist — tidak diblokir via iptables.")
+            log.warning(f"{client_ip} ada di whitelist \u2014 tidak diblokir via iptables.")
             raise HTTPException(
                 status_code=429,
-                detail=f"Terlalu banyak percobaan login gagal! Tunggu sebelum mencoba lagi."
+                detail="Terlalu banyak percobaan login gagal! Tunggu sebelum mencoba lagi."
             )
 
-        log.warning(f"🚫 Memblokir {client_ip} via iptables...")
-
-        # Blok via iptables
         ok = _ipt_block_ip(client_ip)
-
-        # Tambah ke daftar blocked_ips dashboard
+        if not ok:
+            log.warning(f"Gagal block {client_ip} via iptables (brute force login)")
         ts = datetime.now(timezone.utc).isoformat()
+
         if not any(b["ip"] == client_ip for b in blocked_ips):
             blocked_ips.insert(0, {
                 "ip":        client_ip,
                 "timestamp": ts,
-                "signature": "BRUTE FORCE — Login Dashboard (5x Gagal)",
+                "signature": "BRUTE FORCE \u2014 Login Dashboard (5x Gagal)",
                 "count":     LOGIN_MAX_ATTEMPTS,
             })
             stats["total_blocked"] += 1
 
-        # Broadcast ke UI
         await broadcast({
             "type":      "blocked",
             "src_ip":    client_ip,
-            "signature": "BRUTE FORCE — Login Dashboard (5x Gagal)",
+            "signature": "BRUTE FORCE \u2014 Login Dashboard (5x Gagal)",
             "count":     LOGIN_MAX_ATTEMPTS,
             "timestamp": ts,
         })
 
-        # Kirim webhook
         await send_webhook({
             "event":     "BLOCKED",
             "ip":        client_ip,
-            "signature": "BRUTE FORCE LOGIN — Dashboard (5x percobaan gagal)",
+            "signature": "BRUTE FORCE LOGIN \u2014 Dashboard (5x percobaan gagal)",
             "severity":  1,
             "hit_count": LOGIN_MAX_ATTEMPTS,
             "timestamp": ts,
@@ -617,49 +663,48 @@ async def login(req: LoginRequest, request: Request):
         detail=f"Username atau password salah! Sisa percobaan: {max(0, attempts_left)}"
     )
 
+
 @app.post("/api/logout", dependencies=[Depends(verify_token)])
 async def logout(request: Request):
     client_ip = request.client.host if request.client else "unknown"
     asyncio.create_task(send_webhook({
         "event": "LOGOUT",
-        "message": f"Logout berhasil dari {client_ip} — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        "message": f"Logout dari {client_ip} \u2014 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
     }))
     return {"status": "ok"}
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
-async def index():
-    async with aiofiles.open("static/index.html", "r", encoding="utf-8") as f:
-        return await f.read()
+def index():
+    with open("static/index.html", "r", encoding="utf-8") as f:
+        return f.read()
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     ws_clients.append(ws)
-    # Kirim 50 alert terakhir saat pertama connect
     for alert in list(recent_alerts)[:50]:
         await ws.send_text(json.dumps(alert))
     try:
         while True:
-            await ws.receive_text()  # Keep alive
+            await ws.receive_text()
     except WebSocketDisconnect:
         if ws in ws_clients:
             ws_clients.remove(ws)
-
 
 
 @app.get("/api/stats")
 async def get_stats():
     uptime_sec = int(time.time() - stats["start_time"])
     return {
-        "total_alerts":  stats["total_alerts"],
-        "total_blocked": stats["total_blocked"],
+        "total_alerts":   stats["total_alerts"],
+        "total_blocked":  stats["total_blocked"],
         "active_clients": len(ws_clients),
         "uptime_seconds": uptime_sec,
         "top_attackers": sorted(
-            [{"ip": k, "count": v} for k, v in alert_counts.items()],
+            [{"ip": k, "count": v.get("count", v) if isinstance(v, dict) else v} for k, v in alert_counts.items()],
             key=lambda x: x["count"], reverse=True
         )[:10],
     }
@@ -676,40 +721,19 @@ async def get_alerts(limit: int = 200):
     return list(recent_alerts)[:limit]
 
 
-# ─── Dynamic Whitelist ────────────────────────────────────────────────────────
-WHITELIST_FILE = "whitelist.json"
-dynamic_whitelist = set()
-
-def load_whitelist():
-    global dynamic_whitelist
-    try:
-        if os.path.exists(WHITELIST_FILE):
-            with open(WHITELIST_FILE, "r") as f:
-                dynamic_whitelist = set(json.load(f))
-    except Exception as e:
-        log.error(f"Gagal load whitelist: {e}")
-
-def save_whitelist():
-    try:
-        with open(WHITELIST_FILE, "w") as f:
-            json.dump(list(dynamic_whitelist), f)
-    except Exception as e:
-        log.error(f"Gagal simpan whitelist: {e}")
-
+# ─── Whitelist Routes ─────────────────────────────────────────────────────────
 @app.get("/api/whitelist")
 async def get_whitelist():
     return list(dynamic_whitelist)
+
 
 @app.post("/api/whitelist/{ip}")
 async def add_whitelist(ip: str):
     dynamic_whitelist.add(ip)
     save_whitelist()
-
-    # Jika IP sebelumnya terlanjur diblokir, otomatis lepaskan blokir dari iptables & state
     _ipt_unblock(ip)
     update_state_unblock(ip)
     await broadcast({"type": "unblocked", "ip": ip})
-
     asyncio.create_task(send_webhook({
         "event": "WHITELIST_ADD",
         "ip": ip,
@@ -717,16 +741,12 @@ async def add_whitelist(ip: str):
     }))
     return {"status": "ok"}
 
+
 @app.delete("/api/whitelist/{ip}")
 async def remove_whitelist(ip: str):
     dynamic_whitelist.discard(ip)
     save_whitelist()
-
-    # FIX Bug 3 & 4: Reset alert_counts agar sinkron dengan auto_block.py
-    # Saat IP keluar whitelist, auto_block mulai hitung dari 0,
-    # dashboard harus sama agar tidak ada ghost count lama.
     alert_counts.pop(ip, None)
-
     asyncio.create_task(send_webhook({
         "event": "WHITELIST_REMOVE",
         "ip": ip,
@@ -735,77 +755,63 @@ async def remove_whitelist(ip: str):
     return {"status": "ok"}
 
 
+# ─── Unblock Route ────────────────────────────────────────────────────────────
 @app.post("/api/unblock/{ip}")
 async def unblock_ip_endpoint(ip: str, _=Depends(verify_token)):
-    """
-    Unblock IP: hapus dari iptables SURICATA_BLOCK chain,
-    update memory state, dan sync ke auto_block via file.
-    """
+    """Unblock IP: hapus dari iptables, update state, sync ke auto_block."""
     global blocked_ips
-
-    # Hapus dari iptables
     ok, err = _ipt_unblock(ip)
     if not ok:
         log.warning(f"iptables unblock {ip} mungkin tidak ada: {err}")
-        # Tetap lanjutkan cleanup state meskipun rule tidak ditemukan
 
-    # Update memory
     blocked_ips = [b for b in blocked_ips if b["ip"] != ip]
     stats["total_blocked"] = len(blocked_ips)
-
-    # Sync ke auto_block.py via state file
     update_state_unblock(ip)
-
     await broadcast({"type": "unblocked", "ip": ip})
-    log.info(f"🔓 Unblocked: {ip}")
-    
+    log.info(f"Unblocked: {ip}")
     asyncio.create_task(send_webhook({
         "event": "UNBLOCKED",
         "ip": ip,
-        "message": f"IP {ip} telah dibebaskan dari blokir (Unblock) secara manual melalui Dashboard."
+        "message": f"IP {ip} telah dibebaskan dari blokir secara manual melalui Dashboard."
     }))
-    
     return {"status": "ok", "ip": ip, "iptables_ok": ok}
 
 
-@app.get("/api/alerts")
-async def get_alerts(limit: int = 100):
-    return list(recent_alerts)[:limit]
-
-
+# ─── Settings Routes ──────────────────────────────────────────────────────────
 @app.get("/api/settings")
 async def get_settings(_=Depends(verify_token)):
     s = load_settings()
     if s.get("secret_token"):
-        s["secret_token"] = "••••••••"
+        s["secret_token"] = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
     return s
 
 
 class SettingsUpdate(BaseModel):
-    webhook_url:       Optional[str]  = None
-    webhook_headers:   Optional[dict] = None
-    threshold:         Optional[int]  = None
-    severity:          Optional[int]  = None
-    interval:          Optional[int]  = None
-    secret_token:      Optional[str]  = None
-    telegram_chat_id:  Optional[str]  = None
+    webhook_url:      Optional[str]  = None
+    webhook_headers:  Optional[dict] = None
+    threshold:        Optional[int]  = None
+    severity:         Optional[int]  = None
+    interval:         Optional[int]  = None
+    secret_token:     Optional[str]  = None
+    telegram_chat_id: Optional[str]  = None
 
 
 @app.post("/api/settings")
 async def update_settings(body: SettingsUpdate, _=Depends(verify_token)):
     s = load_settings()
-    if body.webhook_url       is not None: s["webhook_url"]       = body.webhook_url
-    if body.webhook_headers   is not None: s["webhook_headers"]   = body.webhook_headers
-    if body.threshold         is not None: s["threshold"]         = body.threshold
-    if body.severity          is not None: s["severity"]          = body.severity
-    if body.interval          is not None: s["interval"]          = body.interval
-    if body.telegram_chat_id  is not None: s["telegram_chat_id"]  = body.telegram_chat_id
-    if body.secret_token and body.secret_token != "••••••••":
+    if body.webhook_url      is not None: s["webhook_url"]      = body.webhook_url
+    if body.webhook_headers  is not None: s["webhook_headers"]  = body.webhook_headers
+    if body.threshold        is not None: s["threshold"]        = body.threshold
+    if body.severity         is not None: s["severity"]         = body.severity
+    if body.interval         is not None: s["interval"]         = body.interval
+    if body.telegram_chat_id is not None: s["telegram_chat_id"] = body.telegram_chat_id
+    if body.secret_token and body.secret_token != "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022":
         s["secret_token"] = body.secret_token
     save_settings(s)
     return {"status": "saved"}
 
 
+# ─── Webhook Test & Log Routes ────────────────────────────────────────────────
 @app.post("/api/webhook/test")
 async def test_webhook(_=Depends(verify_token)):
     payload = {
@@ -814,8 +820,7 @@ async def test_webhook(_=Depends(verify_token)):
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     await send_webhook(payload)
-    logs = list(webhook_log)
-    return {"status": "sent", "log": logs[:1]}
+    return {"status": "sent", "log": list(webhook_log)[:1]}
 
 
 @app.get("/api/webhook/log")
@@ -828,20 +833,19 @@ async def get_webhook_log(_=Depends(verify_token)):
 async def internal_event(request: Request):
     """
     Endpoint internal untuk menerima event dari auto_block.py.
-    - type="blocked": update blocked_ips, kirim webhook, broadcast UI
-    - type="alert": DIABAIKAN (tail_eve() sudah menangani dari eve.json langsung)
+    - type=blocked: update blocked_ips, kirim webhook, broadcast UI
+    - type=alert: DIABAIKAN (tail_eve() sudah menangani dari eve.json langsung)
     """
     try:
         data = await request.json()
         event_type = data.get("type", "alert")
 
         if event_type == "blocked":
-            src_ip    = data.get("src_ip", "")   # FIX: "src_ip" bukan "ip"
+            src_ip    = data.get("src_ip", "")
             signature = data.get("signature", "N/A")
             count     = data.get("count", 0)
             ts        = data.get("timestamp", datetime.now(timezone.utc).isoformat())
 
-            # Hindari duplikat
             if src_ip and not any(b["ip"] == src_ip for b in blocked_ips):
                 blocked_ips.insert(0, {
                     "ip":        src_ip,
@@ -851,7 +855,6 @@ async def internal_event(request: Request):
                 })
                 stats["total_blocked"] += 1
 
-                # Broadcast ke UI
                 await broadcast({
                     "type":      "blocked",
                     "src_ip":    src_ip,
@@ -860,7 +863,6 @@ async def internal_event(request: Request):
                     "timestamp": ts,
                 })
 
-                # Kirim webhook notifikasi
                 await send_webhook({
                     "event":     "BLOCKED",
                     "ip":        src_ip,
@@ -869,8 +871,6 @@ async def internal_event(request: Request):
                     "hit_count": count,
                     "timestamp": ts,
                 })
-
-        # type="alert" → tidak perlu diproses, tail_eve() sudah menangani
 
         return {"status": "ok"}
     except Exception as e:

@@ -25,7 +25,7 @@ import ipaddress
 from collections import defaultdict
 from datetime import datetime, timezone
 
-import httpx
+import urllib.request
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 EVE_LOG_PATH    = os.getenv("EVE_LOG_PATH",    "/var/log/suricata/eve.json")
@@ -119,10 +119,13 @@ logging.basicConfig(
 log = logging.getLogger("auto_block")
 
 # ─── State ────────────────────────────────────────────────────────────────────
-alert_counts: dict = defaultdict(int)
+alert_counts: dict = {}  # Format: {"ip": {"count": X, "last_seen": timestamp}}
 blocked_ips:  set  = set()
 running = True
 last_state_mtime = 0
+last_cleanup = 0
+CLEANUP_INTERVAL = 3600  # Bersihkan setiap 1 jam
+TTL_SECONDS = 86400      # Hapus IP jika tidak ada aktivitas selama 24 jam
 
 
 def load_state():
@@ -148,8 +151,12 @@ def load_state():
         # Prioritas disk: jika dashboard unblock → hapus dari memory. Abaikan IP yang whitelisted
         blocked_ips = {ip for ip in disk_blocked if not is_whitelisted(ip)}
 
-        for ip, count in disk_counts.items():
-            alert_counts[ip] = count
+        # Migrasi & Muat state
+        for ip, val in disk_counts.items():
+            if isinstance(val, int):
+                alert_counts[ip] = {"count": val, "last_seen": time.time()}
+            else:
+                alert_counts[ip] = val
 
         last_state_mtime = mtime
         log.info(f"State reload dari disk: {len(blocked_ips)} IP diblok")
@@ -181,12 +188,17 @@ signal.signal(signal.SIGTERM, handle_exit)
 signal.signal(signal.SIGINT,  handle_exit)
 
 
-# ─── Kirim event ke Dashboard ─────────────────────────────────────────────────
 def notify_dashboard(payload: dict):
     """Kirim event ke endpoint internal dashboard (non-blocking, best-effort)."""
     try:
-        with httpx.Client(timeout=3) as client:
-            client.post(f"{DASHBOARD_URL}/internal/event", json=payload)
+        req = urllib.request.Request(
+            f"{DASHBOARD_URL}/internal/event", 
+            data=json.dumps(payload).encode('utf-8'), 
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=3):
+            pass
     except Exception as e:
         log.error(f"Gagal kirim notifikasi ke dashboard ({DASHBOARD_URL}): {e}")  # Dashboard mungkin belum ready, tidak perlu fatal
 
@@ -357,6 +369,19 @@ def tail_eve_json(filepath: str):
                 except OSError:
                     pass
 
+            # Lakukan garbage collection secara berkala
+            global last_cleanup
+            now = time.time()
+            if now - last_cleanup > CLEANUP_INTERVAL:
+                cleaned = False
+                for ip in list(alert_counts.keys()):
+                    if now - alert_counts[ip].get("last_seen", now) > TTL_SECONDS:
+                        del alert_counts[ip]
+                        cleaned = True
+                last_cleanup = now
+                if cleaned:
+                    save_state()
+
             yield line
 
 
@@ -371,6 +396,10 @@ def main():
     log.info(f"  Dashboard    : {DASHBOARD_URL}")
     log.info(f"  Whitelisted  : {sorted(WHITELIST_IPS)}")
     log.info("=" * 58)
+
+    # Baca settings.json dari dashboard saat startup (sebelum masuk loop)
+    update_dynamic_settings()
+    log.info(f"  Settings dashboard: threshold={current_threshold}, severity={current_severity}")
 
     load_state()
 
@@ -443,8 +472,12 @@ def main():
             continue
 
         # Tambah counter
-        alert_counts[src_ip] += 1
-        count = alert_counts[src_ip]
+        now = time.time()
+        if src_ip not in alert_counts:
+            alert_counts[src_ip] = {"count": 0, "last_seen": now}
+        alert_counts[src_ip]["count"] += 1
+        alert_counts[src_ip]["last_seen"] = now
+        count = alert_counts[src_ip]["count"]
 
         log.info(
             f"⚠  [sev={severity}] {src_ip} | "

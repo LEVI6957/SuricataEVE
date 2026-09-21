@@ -834,6 +834,22 @@
             </form>
         </div>
     </div>
+
+    <!-- Setup Overlay -->
+    <div id="setupOverlay" style="visibility:hidden; opacity:0; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,0.95); z-index:9999; display:flex; align-items:center; justify-content:center; transition: opacity 0.3s;">
+        <div class="login-box">
+            <div class="login-logo">⚙️</div>
+            <div class="login-title">SETUP ADMINISTRATOR</div>
+            <div style="text-align:center; font-size:0.85rem; color:var(--muted); margin-bottom:1.5rem;">
+                Silakan buat akun admin untuk dashboard ini.
+            </div>
+            <form class="login-form" id="setupForm" onsubmit="handleSetup(event)">
+                <input type="text" id="setupUser" placeholder="Username Baru" required autocomplete="off" />
+                <input type="password" id="setupPass" placeholder="Password Baru" required />
+                <button type="submit" class="btn btn-primary login-btn" id="setupBtn">BUAT AKUN</button>
+            </form>
+        </div>
+    </div>
     <div class="app">
         <header>
             <div class="logo">
@@ -1517,7 +1533,57 @@
             document.getElementById('loginPass').value = '';
         }
 
-        function checkAuth() {
+        async function handleSetup(e) {
+            e.preventDefault();
+            const btn = document.getElementById('setupBtn');
+            const u = document.getElementById('setupUser').value;
+            const p = document.getElementById('setupPass').value;
+
+            btn.disabled = true;
+            btn.textContent = "MEMPROSES...";
+
+            try {
+                const r = await fetch('/api/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: u, password: p })
+                });
+
+                if (r.ok) {
+                    toast('Setup berhasil! Silakan login.', 'success');
+                    document.getElementById('setupOverlay').style.opacity = '0';
+                    setTimeout(() => {
+                        document.getElementById('setupOverlay').style.visibility = 'hidden';
+                        document.getElementById('loginOverlay').style.visibility = 'visible';
+                        document.getElementById('loginOverlay').style.opacity = '1';
+                    }, 500);
+                } else {
+                    const err = await r.json();
+                    alert(err.detail || "Gagal melakukan setup.");
+                    btn.disabled = false;
+                    btn.textContent = "BUAT AKUN";
+                }
+            } catch (e) {
+                alert("Kesalahan jaringan saat setup.");
+                btn.disabled = false;
+                btn.textContent = "BUAT AKUN";
+            }
+        }
+
+        async function checkAuth() {
+            try {
+                const res = await fetch('/api/setup/status');
+                const data = await res.json();
+                if (data.setup_required) {
+                    document.getElementById('setupOverlay').style.visibility = 'visible';
+                    document.getElementById('setupOverlay').style.opacity = '1';
+                    document.getElementById('loginOverlay').style.visibility = 'hidden';
+                    return;
+                }
+            } catch (e) {
+                console.error("Gagal cek status setup:", e);
+            }
+
             const t = localStorage.getItem('levi_token');
             if (t) {
                 authToken = t;

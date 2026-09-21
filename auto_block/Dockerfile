@@ -15,8 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Salin script
 COPY auto_block.py /app/auto_block.py
 
-# Install Python dependency untuk notifikasi ke dashboard
-RUN pip install --no-cache-dir httpx
 
 # Buat file log dan state kosong
 RUN touch /app/blocked_ips.log /app/alert_counts.json

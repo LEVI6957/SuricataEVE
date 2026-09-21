@@ -23,16 +23,7 @@ os.makedirs(STATIC_DIR, exist_ok=True)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("report")
 
-HAS_PLT = False
-try:
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    import numpy as np
-    HAS_PLT = True
-except ImportError:
-    logger.warning("matplotlib/seaborn tidak terpasang. Grafik PNG tidak akan dibuat.")
+
 
 @dataclass
 class ScenarioInfo:
@@ -247,38 +238,7 @@ def main():
         f.write(f"Mitigation Rate,{mitigation_rate*100:.2f}%\n")
         f.write(f"Avg Response Time,{mean_rt:.3f} s\n")
 
-    # 7. Render Grafik (Opsional)
-    if HAS_PLT:
-        try:
-            # Confusion Matrix
-            cm = np.array([[tn_count, fp_count], [fn_count, tp_count]])
-            plt.figure(figsize=(5, 4))
-            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                        xticklabels=['Normal', 'Attack'],
-                        yticklabels=['Normal', 'Attack'],
-                        cbar=False, annot_kws={"size": 14})
-            plt.title('Confusion Matrix')
-            plt.xlabel('Predicted')
-            plt.ylabel('Actual')
-            plt.tight_layout()
-            plt.savefig(os.path.join(STATIC_DIR, 'confusion_matrix.png'), dpi=150)
-            plt.close()
-            
-            # Latency Chart
-            if valid_latencies:
-                plt.figure(figsize=(6, 4))
-                plt.plot(range(1, len(valid_latencies) + 1), valid_latencies, marker='o', color='#3b82f6')
-                plt.axhline(y=mean_rt, color='#ef4444', linestyle='--', label=f'Avg: {mean_rt:.3f}s')
-                plt.title('Response Time (Blocked Attacks)')
-                plt.xlabel('Incident')
-                plt.ylabel('Seconds')
-                plt.legend()
-                plt.grid(True, linestyle=':', alpha=0.6)
-                plt.tight_layout()
-                plt.savefig(os.path.join(STATIC_DIR, 'latency_chart.png'), dpi=150)
-                plt.close()
-        except Exception as e:
-            logger.warning(f"Gagal membuar grafik: {e}")
+
 
     # 8. Generate HTML (Clean Dark Mode Theme)
     rows_html = ""
@@ -459,15 +419,7 @@ def main():
             </tbody>
         </table>
 
-        <h2 class="section-title">Visualizations</h2>
-        <div class="charts">
-            <div class="chart-box">
-                <img src="confusion_matrix.png" alt="Confusion Matrix">
-            </div>
-            <div class="chart-box">
-                <img src="latency_chart.png" alt="Latency Chart">
-            </div>
-        </div>
+
     </div>
 </body>
 </html>

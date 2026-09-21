@@ -90,11 +90,16 @@ for f in "dashboard/settings.json" "dashboard/whitelist.json" "auto_block/alert_
         if [[ "$f" == "dashboard/whitelist.json" ]]; then
             echo "[]" > "$f"
         elif [[ "$f" == "dashboard/settings.json" ]]; then
-            echo '{"webhook_url":"","webhook_headers":{},"threshold":3,"severity":2,"interval":10,"secret_token":""}' > "$f"
+            echo '{"webhook_url":"","webhook_headers":{},"threshold":3,"severity":2,"interval":10,"secret_token":"","telegram_chat_id":""}' > "$f"
         elif [[ "$f" == "auto_block/alert_counts.json" ]]; then
             echo "{}" > "$f"
         else
             touch "$f"
+        fi
+    elif [[ "$f" == "dashboard/settings.json" ]]; then
+        # Update missing keys in existing settings.json
+        if command -v python3 &>/dev/null; then
+            python3 -c "import json, os; p='dashboard/settings.json'; d=json.load(open(p)) if os.path.getsize(p)>0 else {}; d.setdefault('telegram_chat_id', ''); d.setdefault('secret_token', ''); json.dump(d, open(p,'w'), indent=2)" || true
         fi
     fi
 done
