@@ -95,8 +95,13 @@ def update_dynamic_settings():
         try:
             with open("/app/settings.json", "r") as f:
                 data = json.load(f)
-                current_threshold = data.get("threshold", int(os.getenv("BLOCK_THRESHOLD", "3")))
-                current_severity = data.get("severity", int(os.getenv("ALERT_SEVERITY", "3")))
+                new_threshold = data.get("threshold", int(os.getenv("BLOCK_THRESHOLD", "3")))
+                new_severity = data.get("severity", int(os.getenv("ALERT_SEVERITY", "3")))
+                
+                if new_threshold != current_threshold or new_severity != current_severity:
+                    current_threshold = new_threshold
+                    current_severity = new_severity
+                    log.info(f"⚙️ Settings diperbarui dari Dashboard: Threshold={current_threshold}, Severity={current_severity}")
         except Exception:
             pass
         last_settings_fetch = now
