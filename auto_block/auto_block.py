@@ -358,6 +358,7 @@ def tail_eve_json(filepath: str):
     with open(filepath, "r") as f:
         f.seek(0, 2)  # Loncat ke akhir file (tail mode)
         while True:
+            update_dynamic_settings()
             line = f.readline()
             if not line:
                 time.sleep(0.2)
@@ -463,8 +464,6 @@ def main():
         src_ip    = event.get("src_ip", "")
         signature = alert.get("signature", "N/A")
         category  = alert.get("category", "")
-
-        update_dynamic_settings()
 
         # Otomatis lepaskan blokir jika ada IP di blocked_ips yang baru masuk whitelist
         for b_ip in list(blocked_ips):
