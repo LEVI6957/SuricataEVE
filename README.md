@@ -1,40 +1,21 @@
-# 🛡️ Suricata Auto Block Dashboard
+# Suricata Auto Block Dashboard
 
-Sistem deteksi & pemblokiran otomatis berbasis **Suricata IDS**, dilengkapi web dashboard real-time.  
-Setiap IP penyerang yang memicu alert melebihi threshold akan **otomatis diblokir via iptables**.
+Sebuah sistem deteksi dan pemblokiran IP otomatis berbasis **Suricata IDS**, yang dilengkapi dengan web dashboard untuk memonitor dan mengatur konfigurasi secara langsung.
 
->  Proyek ini dibuat sebagai implementasi nyata sistem keamanan jaringan berbasis open-source untuk keperluan penelitian.
+Sistem ini dirancang untuk berjalan di atas **Docker**, sehingga tidak memerlukan instalasi Suricata secara manual di OS host (kecuali konfigurasi iptables).
 
 ---
 
-## Stack Teknologi
+## Komponen Sistem
 
 | Service | Fungsi |
 |---|---|
-| **Suricata 8.x** | Network IDS — sniff traffic & tulis alert ke `eve.json`           |
-| **EveBox**       | UI viewer alert Suricata (analisis detail log)                    |
-| **auto_block**   | Baca `eve.json` real-time, blok IP via **iptables** otomatis      |
-| **dashboard**    | Web UI: live feed alert, manage blocked IPs, webhook notifikasi   |
+| **Suricata 8.x** | Network IDS — Melakukan sniffing pada *traffic* jaringan dan menulis *alert* ke `eve.json` |
+| **EveBox**       | UI untuk melihat detail *alert* dari Suricata secara mendalam |
+| **auto_block**   | Membaca `eve.json` secara *real-time* dan memblokir IP via **iptables** jika mencapai batas *threshold* |
+| **dashboard**    | Web UI: memantau *alert*, mengelola daftar IP terblokir, mengatur *whitelist*, dan mengonfigurasi *webhook* |
 
-> Semua service berjalan via **Docker** — tidak perlu install Suricata secara manual.
-
----
-
-## Cara Kerja
-
-```
-Suricata sniff traffic (eth0 + lo)
-       ↓
-   eve.json (log alert real-time)
-       ↓
-auto_block.py baca real-time
-       ↓
-IP mencapai threshold? → iptables -I SURICATA_BLOCK -s <IP> -j DROP
-       ↓
-Notifikasi ke Dashboard (WebSocket) + Webhook (Discord/Slack/Telegram)
-```
-
-**iptables custom chain** `SURICATA_BLOCK` digunakan — terpisah dari rule firewall lain, mudah di-audit dan di-reset.
+> **Catatan Teknis:** Aturan pemblokiran menggunakan *custom chain* iptables bernama `SURICATA_BLOCK`. Pemisahan ini dilakukan agar aturan tidak tumpang tindih dengan aturan *firewall* bawaan sistem (seperti UFW).
 
 ---
 
@@ -42,129 +23,96 @@ Notifikasi ke Dashboard (WebSocket) + Webhook (Discord/Slack/Telegram)
 
 ### Prasyarat
 - Ubuntu 20.04 / 22.04 / 24.04
-- Docker & Docker Compose Plugin
+- Disarankan dijalankan pada sistem operasi yang masih bersih (*fresh install*).
 
-```bash
-# 1. Install Docker (jika belum ada)
-sudo apt update && sudo apt install -y docker.io docker-compose-plugin
+### Langkah Instalasi
 
-# 2. Clone repo
-git clone https://github.com/LEVI6957/SuricataEVE.git
-cd SuricataEVE
-
-# 3. Jalankan script instalasi otomatis
-sudo bash update.sh
-```
-
-Script `update.sh` akan otomatis:
-- Mendeteksi network interface
-- Membuat file `.env`
-- Mengaktifkan semua sumber rules Suricata (ET Open + ptresearch + abuse.ch + tgreen + oisf)
-- Membangun dan menjalankan semua Docker container
+1. Clone repositori ini:
+   ```bash
+   git clone https://github.com/LEVI6957/SuricataEVE.git
+   cd SuricataEVE
+   ```
+2. Jalankan skrip instalasi (memerlukan akses `sudo`):
+   ```bash
+   sudo bash install.sh
+   ```
+3. Skrip `install.sh` akan melakukan instalasi Docker, membuat file konfigurasi `.env`, menerapkan aturan iptables dan UFW, serta menjalankan Docker Compose.
 
 ---
 
-## Konfigurasi
+## Setup Awal (Setup Wizard)
 
-Edit file `.env` setelah instalasi:
+Setelah skrip instalasi selesai dijalankan, Anda harus melakukan *Setup* awal melalui Dashboard:
 
-```env
-SERVER_IP=0.0.0.0          # IP server (0.0.0.0 = semua interface)
-DASHBOARD_PORT=8080        # Port dashboard
-NET_IFACE=eth0             # Network interface yang di-sniff Suricata (cek: ip a)
-BLOCK_THRESHOLD=3          # Jumlah alert sebelum IP diblok
-ALERT_SEVERITY=2           # 1=High only, 2=Medium+High, 3=Semua alert
-DASHBOARD_USER=admin       # Username login dashboard
-DASHBOARD_PASS=admin123    # Password login dashboard (WAJIB diganti!)
-```
+1. Buka browser dan akses: `http://<IP_SERVER>:8080`
+2. Halaman **Setup Wizard** akan muncul secara otomatis untuk instalasi baru.
+3. Anda akan diminta untuk mengatur:
+   - **Username & Password** untuk login administrator.
+   - **Batas Threshold** (jumlah alert sebelum IP diblokir).
+   - **Batas Severity** (keparahan alert yang dicatat).
+   - **Notifikasi Webhook** (Discord / Telegram) — Opsional.
+4. Setelah diselesaikan, konfigurasi akan disimpan ke `settings.json` dan Anda dapat *login* ke Dashboard.
 
-> **Cara cek network interface:** jalankan `ip a` di server, cari nama interface aktif (contoh: `eth0`, `ens33`, `enp3s0`)
+> **Catatan Konfigurasi:** Jika Anda ingin mengubah *Threshold*, *Severity*, atau pengaturan *Webhook* di kemudian hari, Anda cukup melakukannya dari menu **Settings** di dalam Dashboard (tanpa perlu melakukan *restart* pada layanan).
 
 ---
 
-## Akses Dashboard
+## Akses Layanan
 
 | URL | Keterangan |
 |---|---|
-| `http://x.x.x.x:8080` | Dashboard utama (live feed + firewall control) |
-| `http://x.x.x.x:5636` | EveBox (analisis alert detail) |
+| `http://<IP_SERVER>:8080` | Dashboard Utama (Memonitor *alert* & kontrol *firewall*) |
+| `http://<IP_SERVER>:5636` | EveBox (Pencarian & Analisis detail log) |
+
+> **Penting terkait Keamanan (EveBox):** Skrip instalasi menggunakan `ufw deny` pada port 5636 secara *default*. Ini berarti EveBox **tidak bisa** diakses secara publik demi keamanan, karena EveBox di-deploy tanpa fitur otentikasi. Jika Anda ingin mengaksesnya, Anda dapat melakukan SSH Tunneling ke port 5636 atau membuka *port* pada UFW jika Anda yakin jaringannya aman (`sudo ufw allow 5636/tcp`).
 
 ---
 
-## Fitur Dashboard
+## Fitur Utama
 
-- 📡 **Live Feed** — alert Suricata tampil real-time via WebSocket
-- 🔒 **IP Diblok** — daftar IP yang diblok + tombol Unblock
-- 🛡️ **IP Whitelist** — daftar IP yang dikecualikan dari pemblokiran
-- 🔔 **Webhook Notifikasi** — kirim notifikasi ke Discord, Slack, atau Telegram otomatis
-- ⚙️ **Konfigurasi** — ubah threshold & severity langsung dari UI tanpa restart
-- 🚫 **Brute Force Guard** — login gagal 5x → IP penyerang otomatis diblokir
-- 📊 **Stats** — total alert, total blocked, jumlah whitelist, uptime
-
----
-
-## Sumber Rules Suricata
-
-Sistem secara otomatis mengaktifkan rule database berikut (±40.000+ rules):
-
-| Sumber | Spesialisasi |
-|---|---|
-| **ET Open**        | 28.500+ rules umum (default) |
-| **ptresearch/attackdetection** | Serangan web, exploit, APT |
-| **tgreen/hunting** | Threat hunting & anomali jaringan |
-| **sslbl/ssl-fp-blacklist** | SSL/TLS malware & botnet fingerprint |
-| **abuse.ch/botcc** | IP botnet & server C2 aktif |
-| **oisf/trafficid** | Deteksi protokol jaringan |
+- **Live Feed** — *Alert* dari Suricata ditampilkan di Dashboard secara *real-time* via WebSocket.
+- **Manajemen IP** — Melihat daftar IP yang sedang diblokir beserta kemampuan untuk membuka blokir (Unblock) langsung dari UI.
+- **Whitelist** — Fitur untuk mendaftarkan alamat IP yang tidak boleh diblokir oleh sistem (mendukung input banyak IP sekaligus).
+- **Pengaturan Dinamis** — Perubahan nilai *Threshold*, *Severity*, dan *Webhook* dari Dashboard akan langsung diterapkan (*on-the-fly*) oleh *auto_block* tanpa jeda.
+- **Atomic Saving** — Penyimpanan konfigurasi di-handle menggunakan metode penulisan atomik untuk mencegah berkas `settings.json` menjadi korup ketika aplikasi terhenti mendadak.
+- **Brute Force Guard** — Perlindungan keamanan akses Dashboard: jika terjadi percobaan *login* gagal sebanyak 5 kali berturut-turut, alamat IP pengunjung akan otomatis diblokir.
 
 ---
 
-## Webhook Discord / Slack / Telegram
+## Notifikasi Webhook
 
-Konfigurasi langsung dari panel **Webhook Notifikasi** di dashboard — **tidak perlu restart**.
+Sistem mendukung pengiriman notifikasi terpusat ketika terjadi kejadian (*event*) penting.
 
-Event yang memicu notifikasi:
-- `BLOCKED` — IP baru diblokir
-- `HIGH_ALERT` — Alert severity tinggi terdeteksi
-- `BRUTE FORCE` — Percobaan login paksa ke dashboard
-- `UNBLOCKED` — IP dibebaskan secara manual
-- `LOGIN` — Admin berhasil login
-- `WHITELIST_ADD/REMOVE` — Perubahan whitelist
+Event yang akan memicu pengiriman pesan:
+- `BLOCKED` — Alamat IP baru saja diblokir oleh iptables.
+- `UNBLOCKED` — Alamat IP dibebaskan secara manual dari Dashboard.
+- `HIGH_ALERT` — Terdapat *alert* dengan tingkat keparahan tinggi.
+- `BRUTE FORCE` — Percobaan login berulang yang gagal.
+- `LOGIN` — Administrator berhasil masuk ke Dashboard.
+- `WHITELIST_ADD/REMOVE` — Alamat IP ditambahkan atau dihapus dari daftar *whitelist*.
+
+Konfigurasi untuk **Discord** atau **Telegram** dapat diatur melalui halaman **Settings**.
 
 ---
 
-## Simulasi Serangan (untuk Pengujian)
+## Perintah Manajemen
 
-Dari mesin penyerang, jalankan:
+Berikut adalah perintah-perintah yang mungkin Anda butuhkan untuk memantau server:
 
 ```bash
-# Download script simulasi
-curl -o ~/attack_sim.sh https://raw.githubusercontent.com/LEVI6957/SuricataEVE/main/attack_sim.sh
-
-# Jalankan simulasi 20 IP penyerang berbeda dengan payload Log4Shell
-sudo bash ~/attack_sim.sh <IP_SERVER> 80
-```
-
----
-
-## Perintah Berguna
-
-```bash
-# Cek status semua service
+# Mengecek status container Docker
 docker compose ps
 
-# Lihat log Suricata
-docker compose logs -f suricata
+# Melihat log auto_block secara real-time
+docker compose logs -f auto_block
 
-# Lihat log dashboard
+# Melihat log Dashboard secara real-time
 docker compose logs -f dashboard
 
-# Cek IP yang diblokir iptables
+# Memeriksa daftar IP yang saat ini diblokir langsung dari iptables OS host
 sudo iptables -n -L SURICATA_BLOCK --line-numbers
 
-# Update sistem & rules
-sudo bash update.sh
-
-# Hapus semua (uninstall)
+# Melakukan uninstalasi dan menghapus seluruh konfigurasi
 sudo bash uninstall.sh
 ```
 
@@ -172,11 +120,8 @@ sudo bash uninstall.sh
 
 ## Lisensi
 
-MIT License — lihat file [LICENSE](LICENSE)
-
----
+Proyek ini berada di bawah Lisensi MIT. Lihat file [LICENSE](LICENSE) untuk informasi lebih lanjut.
 
 ## Author
 
-**Levi** — [@LEVI6957](https://github.com/LEVI6957)  
-Dikembangkan sebagai proyek sistem keamanan jaringan berbasis open-source.
+**Levi** — [@LEVI6957](https://github.com/LEVI6957)
