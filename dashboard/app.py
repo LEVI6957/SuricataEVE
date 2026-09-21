@@ -77,8 +77,10 @@ def load_settings() -> dict:
 
 
 def save_settings(data: dict):
-    with open(SETTINGS_FILE, "w") as f:
+    tmp_file = SETTINGS_FILE + ".tmp"
+    with open(tmp_file, "w") as f:
         json.dump(data, f, indent=2)
+    os.replace(tmp_file, SETTINGS_FILE)
 
 
 # ─── Whitelist Helper ─────────────────────────────────────────────────────────
@@ -94,8 +96,10 @@ def load_whitelist():
 
 def save_whitelist():
     try:
-        with open(WHITELIST_FILE, "w") as f:
+        tmp_file = WHITELIST_FILE + ".tmp"
+        with open(tmp_file, "w") as f:
             json.dump(list(dynamic_whitelist), f)
+        os.replace(tmp_file, WHITELIST_FILE)
     except Exception as e:
         log.error(f"Gagal simpan whitelist: {e}")
 

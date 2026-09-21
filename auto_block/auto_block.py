@@ -172,13 +172,15 @@ def load_state():
 
 
 def save_state():
-    """Simpan alert_counts dan blocked_ips ke file."""
+    """Simpan alert_counts dan blocked_ips ke file secara aman (atomic)."""
     try:
-        with open(STATE_FILE, "w") as f:
+        tmp_file = STATE_FILE + ".tmp"
+        with open(tmp_file, "w") as f:
             json.dump({
                 "alert_counts": dict(alert_counts),
                 "blocked_ips":  list(blocked_ips),
             }, f)
+        os.replace(tmp_file, STATE_FILE)
     except Exception as e:
         log.warning(f"Gagal simpan state: {e}")
 
